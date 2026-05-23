@@ -1,0 +1,20 @@
+export const DEFAULT_IGNORE_PATTERNS = [
+  '**/node_modules/**',
+  '**/.git/**',
+  '**/dist/**',
+  '**/build/**',
+  '**/.next/**',
+  '**/.nuxt/**',
+  '**/coverage/**',
+  '**/.cache/**',
+  '**/out/**',
+  '**/.turbo/**',
+  '**/.vercel/**',
+  '**/.idea/**',
+  '**/.vscode/**',
+  '**/__pycache__/**',
+  '**/*.min.js',
+  '**/*.min.css',
+  '**/.DS_Store',
+  '**/Thumbs.db'
+]
