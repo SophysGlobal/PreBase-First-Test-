@@ -1,0 +1,9 @@
+{
+  "npm.autoDetect": "on",
+  "npm.packageManager": "npm",
+  "npm.scriptExplorerAction": "run",
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/out/**": true
+  }
+}

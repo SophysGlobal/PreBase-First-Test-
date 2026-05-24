@@ -1,5 +1,7 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import { BaseEdge, getBezierPath, type EdgeProps } from '@xyflow/react'
+
+export type EdgeVariant = 'static' | 'dynamic' | 'highlighted' | 'selected'
 
 function ArchitectureEdgeComponent({
   id,
@@ -10,8 +12,12 @@ function ArchitectureEdgeComponent({
   sourcePosition,
   targetPosition,
   style,
-  markerEnd
+  markerEnd,
+  data
 }: EdgeProps) {
+  const variant = (data as { variant?: EdgeVariant })?.variant ?? 'static'
+  const [hovered, setHovered] = useState(false)
+
   const [edgePath] = getBezierPath({
     sourceX,
     sourceY,
@@ -19,20 +25,34 @@ function ArchitectureEdgeComponent({
     targetX,
     targetY,
     targetPosition,
-    curvature: 0.25
+    curvature: variant === 'dynamic' ? 0.35 : 0.25
   })
 
+  const strokeDasharray = variant === 'dynamic' ? '6 4' : undefined
+  const interactionWidth = hovered ? 18 : 6
+
   return (
-    <BaseEdge
-      id={id}
-      path={edgePath}
-      style={{
-        ...style,
-        transition: 'stroke 0.25s ease, stroke-width 0.25s ease, filter 0.25s ease'
-      }}
-      markerEnd={markerEnd}
-      interactionWidth={24}
-    />
+    <g
+      className={`react-flow__edge edge-hoverable ${hovered ? 'edge-hovered' : ''}`}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        style={{
+          ...style,
+          strokeDasharray,
+          strokeWidth: hovered
+            ? Math.max(1.25, Number(style?.strokeWidth ?? 1) + 0.35)
+            : style?.strokeWidth,
+          opacity: hovered ? 1 : style?.opacity,
+          transition: 'stroke 0.2s ease, stroke-width 0.2s ease, opacity 0.2s ease'
+        }}
+        markerEnd={markerEnd}
+        interactionWidth={interactionWidth}
+      />
+    </g>
   )
 }
 

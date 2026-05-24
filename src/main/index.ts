@@ -1,14 +1,18 @@
+import { readFile } from 'fs/promises'
+import { resolveProjectFilePath } from '../core/utils/path-utils'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'path'
 import { ProjectService } from '../core/services/project-service'
+import type { GraphSnapshot, IncrementalUpdate, LayoutMode } from '../core/types'
 
 const isDev = !app.isPackaged
-import type { GraphSnapshot, IncrementalUpdate, LayoutMode } from '../core/types'
 
 let mainWindow: BrowserWindow | null = null
 const projectService = new ProjectService()
 
 function createWindow(): void {
+  const isMac = process.platform === 'darwin'
+
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -16,8 +20,8 @@ function createWindow(): void {
     minHeight: 680,
     show: false,
     backgroundColor: '#0a0a0b',
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    trafficLightPosition: { x: 16, y: 16 },
+    titleBarStyle: isMac ? 'hiddenInset' : 'default',
+    trafficLightPosition: isMac ? { x: 18, y: 20 } : undefined,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -90,6 +94,18 @@ app.whenReady().then(() => {
   ipcMain.handle('graph:relayout', async (_, mode: LayoutMode) => {
     const snapshot = await projectService.relayout(mode)
     return snapshot
+  })
+
+  ipcMain.handle('file:read', async (_, filePath: string) => {
+    const snapshot = projectService.getSnapshot()
+    if (!snapshot || !filePath) return null
+    try {
+      const fullPath = resolveProjectFilePath(snapshot.projectPath, filePath)
+      if (!fullPath) return null
+      return await readFile(fullPath, 'utf-8')
+    } catch {
+      return null
+    }
   })
 
   createWindow()

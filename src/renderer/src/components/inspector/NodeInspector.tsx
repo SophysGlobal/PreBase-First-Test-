@@ -2,13 +2,16 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  Code2,
   FileCode,
   Layers,
+  PanelRightOpen,
   Star,
   X
 } from 'lucide-react'
 import { useGraphStore } from '../../state/graph-store'
 import { getNodeInspectorData } from '../../utils/graph-metadata'
+import { inferFileDescription } from '../../utils/file-description'
 
 export function NodeInspector() {
   const snapshot = useGraphStore((s) => s.snapshot)
@@ -16,6 +19,7 @@ export function NodeInspector() {
   const inspectorOpen = useGraphStore((s) => s.inspectorOpen)
   const setSelectedNodeId = useGraphStore((s) => s.setSelectedNodeId)
   const setInspectorOpen = useGraphStore((s) => s.setInspectorOpen)
+  const openFileInCodeView = useGraphStore((s) => s.openFileInCodeView)
 
   if (!snapshot || !selectedNodeId || !inspectorOpen) return null
 
@@ -24,22 +28,23 @@ export function NodeInspector() {
 
   const { node, incoming, outgoing, incomingLabels, outgoingLabels } = data
   const isEntry = node.isEntry || node.id === snapshot.entryNodeId
+  const description = inferFileDescription(node)
 
   return (
     <AnimatePresence>
       <motion.aside
-        initial={{ x: 320, opacity: 0 }}
+        initial={{ x: 24, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
-        exit={{ x: 320, opacity: 0 }}
+        exit={{ x: 24, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-        className="absolute top-0 right-0 h-full w-72 border-l border-border-subtle bg-surface-raised/90 backdrop-blur-xl z-30 flex flex-col shadow-panel"
+        className="absolute top-0 right-0 h-full w-80 border-l border-border-subtle bg-surface-raised/92 backdrop-blur-xl z-30 flex flex-col shadow-panel titlebar-no-drag"
       >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             {node.kind === 'component' ? (
               <Layers className="w-4 h-4 text-purple-400 shrink-0" />
             ) : (
-              <FileCode className="w-4 h-4 text-indigo-400 shrink-0" />
+              <FileCode className="w-4 h-4 text-accent shrink-0" />
             )}
             <span className="text-sm font-medium truncate">{node.label}</span>
             {isEntry && <Star className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
@@ -50,16 +55,47 @@ export function NodeInspector() {
               setInspectorOpen(false)
             }}
             className="p-1 rounded hover:bg-surface-muted text-text-muted"
+            title="Close panel"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
+        <div className="p-3 border-b border-border-subtle space-y-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => openFileInCodeView(node.id)}
+            disabled={!node.path}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-white text-surface text-sm font-medium hover:bg-zinc-100 disabled:opacity-40 transition-colors"
+          >
+            <Code2 className="w-4 h-4" />
+            Open in Code View
+          </button>
+          <p className="text-[10px] text-text-muted text-center flex items-center justify-center gap-1">
+            <PanelRightOpen className="w-3 h-3" />
+            Right-click any node for quick actions
+          </p>
+        </div>
+
         <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
+          <section className="rounded-lg bg-surface-overlay/60 border border-border-subtle px-3 py-2.5">
+            <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1">About</p>
+            <p className="text-text-secondary leading-relaxed text-[11px]">{description}</p>
+          </section>
+
           {node.path && (
             <section>
               <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Path</p>
               <p className="text-text-secondary font-mono text-[11px] break-all">{node.path}</p>
+            </section>
+          )}
+
+          {node.meta?.architectureLayer && (
+            <section>
+              <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Layer</p>
+              <span className="inline-flex px-2 py-0.5 rounded-md bg-surface-muted text-text-secondary text-[10px] capitalize">
+                {node.meta.architectureLayer}
+              </span>
             </section>
           )}
 

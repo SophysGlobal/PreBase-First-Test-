@@ -10,6 +10,9 @@ export interface LayoutOptions {
   height?: number
 }
 
+const NODE_W = 168
+const NODE_H = 52
+
 export class LayoutEngine {
   private elk = new ELK()
 
@@ -23,13 +26,21 @@ export class LayoutEngine {
 
     if (layoutNodes.length === 0) return {}
 
-    if (mode === 'hierarchy' && options.entryNodeId) {
+    if ((mode === 'hierarchy' || mode === 'circular') && options.entryNodeId) {
       const positions = computeHierarchyLayout(layoutNodes, edges, {
         entryNodeId: options.entryNodeId,
-        layerSpacing: 220,
+        layerSpacing: mode === 'circular' ? 300 : 240,
         baseRadius: 0
       })
       return this.mergePreserved(positions, nodes, options.preservePositions)
+    }
+
+    if (mode === 'grid') {
+      return this.mergePreserved(
+        this.gridLayout(layoutNodes, 220, 100),
+        nodes,
+        options.preservePositions
+      )
     }
 
     const nodeIds = new Set(layoutNodes.map((n) => n.id))
@@ -42,8 +53,8 @@ export class LayoutEngine {
       layoutOptions: this.getLayoutOptions(mode),
       children: layoutNodes.map((n) => ({
         id: n.id,
-        width: this.nodeWidth(n, n.isEntry),
-        height: this.nodeHeight(n, n.isEntry)
+        width: NODE_W,
+        height: n.isEntry ? 58 : NODE_H
       })),
       edges: layoutEdges.map((e) => ({
         id: e.id,
@@ -63,9 +74,14 @@ export class LayoutEngine {
         }
       }
 
+      this.centerPositions(positions)
       return this.mergePreserved(positions, nodes, options.preservePositions)
     } catch {
-      return this.fallbackGridLayout(layoutNodes, options.preservePositions)
+      return this.mergePreserved(
+        this.gridLayout(layoutNodes, 240, 110),
+        nodes,
+        options.preservePositions
+      )
     }
   }
 
@@ -83,7 +99,7 @@ export class LayoutEngine {
       const layoutNodes = nodes.filter((n) => n.kind !== 'folder')
       const fresh = computeHierarchyLayout(layoutNodes, edges, {
         entryNodeId,
-        layerSpacing: 220
+        layerSpacing: 240
       })
       for (const id of Object.keys(existingPositions)) {
         if (!changed.has(id) && existingPositions[id]) {
@@ -115,59 +131,69 @@ export class LayoutEngine {
       case 'force':
         return {
           'elk.algorithm': 'org.eclipse.elk.force',
-          'elk.spacing.nodeNode': '100'
+          'elk.spacing.nodeNode': '110'
+        }
+      case 'scattered':
+        return {
+          'elk.algorithm': 'org.eclipse.elk.force',
+          'elk.spacing.nodeNode': '150',
+          'elk.force.iterations': '300'
         }
       case 'clustered':
         return {
           'elk.algorithm': 'org.eclipse.elk.layered',
           'elk.direction': 'DOWN',
-          'elk.spacing.nodeNode': '70',
-          'elk.layered.spacing.nodeNodeBetweenLayers': '120'
+          'elk.spacing.nodeNode': '80',
+          'elk.layered.spacing.nodeNodeBetweenLayers': '140'
         }
-      case 'layered':
+      case 'pyramid':
         return {
           'elk.algorithm': 'org.eclipse.elk.layered',
-          'elk.direction': 'RIGHT',
-          'elk.spacing.nodeNode': '60',
-          'elk.layered.spacing.nodeNodeBetweenLayers': '100',
+          'elk.direction': 'DOWN',
+          'elk.spacing.nodeNode': '70',
+          'elk.layered.spacing.nodeNodeBetweenLayers': '110',
           'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX'
+        }
+      case 'grid':
+        return {
+          'elk.algorithm': 'org.eclipse.elk.rectpacking',
+          'elk.spacing.nodeNode': '48'
         }
       case 'hierarchy':
       default:
         return {
           'elk.algorithm': 'org.eclipse.elk.layered',
           'elk.direction': 'RIGHT',
-          'elk.spacing.nodeNode': '60'
+          'elk.spacing.nodeNode': '64'
         }
     }
   }
 
-  private nodeWidth(node: GraphNode, isEntry?: boolean): number {
-    const base = isEntry ? 200 : node.kind === 'folder' ? 140 : 160
-    return Math.min(base, 80 + node.label.length * 7)
-  }
-
-  private nodeHeight(node: GraphNode, isEntry?: boolean): number {
-    return isEntry ? 52 : node.kind === 'folder' ? 36 : 44
-  }
-
-  private fallbackGridLayout(
+  private gridLayout(
     nodes: GraphNode[],
-    preserve?: Record<string, LayoutPosition>
+    colGap: number,
+    rowGap: number
   ): Record<string, LayoutPosition> {
-    const cols = Math.ceil(Math.sqrt(nodes.length))
+    const cols = Math.max(1, Math.ceil(Math.sqrt(nodes.length)))
     const positions: Record<string, LayoutPosition> = {}
 
     nodes.forEach((node, i) => {
-      if (preserve?.[node.id]) {
-        positions[node.id] = preserve[node.id]
-        return
-      }
       const col = i % cols
       const row = Math.floor(i / cols)
-      positions[node.id] = { x: col * 240, y: row * 110 }
+      positions[node.id] = { x: col * colGap, y: row * rowGap }
     })
 
+    this.centerPositions(positions)
     return positions
+  }
+
+  private centerPositions(positions: Record<string, LayoutPosition>): void {
+    const vals = Object.values(positions)
+    if (vals.length === 0) return
+    const cx = vals.reduce((s, p) => s + p.x, 0) / vals.length
+    const cy = vals.reduce((s, p) => s + p.y, 0) / vals.length
+    for (const id of Object.keys(positions)) {
+      positions[id] = { x: positions[id].x - cx, y: positions[id].y - cy }
+    }
   }
 }

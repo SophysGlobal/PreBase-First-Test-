@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ReactFlow,
   Background,
@@ -20,39 +20,55 @@ import { GraphLegend } from './GraphLegend'
 import { NodeInspector } from '../inspector/NodeInspector'
 import { EdgeInspector } from '../inspector/EdgeInspector'
 import { AiChatBubble } from '../ai/AiChatBubble'
+import { NodeContextMenu } from './NodeContextMenu'
 import { useGraphStore } from '../../state/graph-store'
+import { useSettingsStore } from '../../state/settings-store'
 import { toFlowEdges, toFlowNodes } from '../../utils/flow-adapter'
 
 const nodeTypes = { architecture: ArchitectureNode }
 const edgeTypes = { architecture: ArchitectureEdge }
 
-function InitialCameraController() {
-  const { setCenter, getNode } = useReactFlow()
+function InitialViewportController() {
+  const { fitView, getNodes } = useReactFlow()
   const snapshot = useGraphStore((s) => s.snapshot)
   const initialCameraDone = useGraphStore((s) => s.initialCameraDone)
   const setInitialCameraDone = useGraphStore((s) => s.setInitialCameraDone)
+  const initialZoom = useSettingsStore((s) => s.initialZoom)
 
   useEffect(() => {
     if (!snapshot || initialCameraDone) return
 
-    const entryId = snapshot.entryNodeId
     const t = setTimeout(() => {
-      if (entryId) {
-        const node = getNode(entryId)
-        if (node) {
-          void setCenter(node.position.x + 90, node.position.y + 28, {
-            zoom: 0.95,
-            duration: 900
-          })
-          setInitialCameraDone(true)
-          return
-        }
+      const nodes = getNodes()
+      if (nodes.length === 0) {
+        setInitialCameraDone(true)
+        return
       }
+
+      const entryId = snapshot.entryNodeId
+      const focusNodes = entryId
+        ? nodes.filter((n) => {
+            if (n.id === entryId) return true
+            const d = Math.hypot(
+              n.position.x - (nodes.find((x) => x.id === entryId)?.position.x ?? 0),
+              n.position.y - (nodes.find((x) => x.id === entryId)?.position.y ?? 0)
+            )
+            return d < 900
+          })
+        : nodes
+
+      void fitView({
+        nodes: focusNodes.length > 0 ? focusNodes : nodes,
+        padding: 0.32,
+        minZoom: 0.5,
+        maxZoom: Math.max(0.75, initialZoom),
+        duration: 850
+      })
       setInitialCameraDone(true)
-    }, 120)
+    }, 200)
 
     return () => clearTimeout(t)
-  }, [snapshot, initialCameraDone, getNode, setCenter, setInitialCameraDone])
+  }, [snapshot, initialCameraDone, getNodes, fitView, setInitialCameraDone, initialZoom])
 
   return null
 }
@@ -95,11 +111,24 @@ export function GraphCanvas() {
   const showMinimap = useGraphStore((s) => s.showMinimap)
   const showFolders = useGraphStore((s) => s.showFolders)
   const graphDepth = useGraphStore((s) => s.graphDepth)
+  const layerVisibility = useGraphStore((s) => s.layerVisibility)
+  const isolatedLayer = useGraphStore((s) => s.isolatedLayer)
+  const focusNeighborhood = useGraphStore((s) => s.focusNeighborhood)
+  const hideLowImportance = useGraphStore((s) => s.hideLowImportance)
   const userPositions = useGraphStore((s) => s.userPositions)
   const updateUserPosition = useGraphStore((s) => s.updateUserPosition)
   const setSelectedNodeId = useGraphStore((s) => s.setSelectedNodeId)
   const setSelectedEdgeId = useGraphStore((s) => s.setSelectedEdgeId)
   const setFocusedNodeId = useGraphStore((s) => s.setFocusedNodeId)
+  const setInspectorOpen = useGraphStore((s) => s.setInspectorOpen)
+
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string } | null>(
+    null
+  )
+  const hoveredEdgeIdRef = useRef<string | null>(null)
+  const panSensitivity = useSettingsStore((s) => s.panSensitivity)
+
+  const dimOnSearch = searchQuery.trim().length > 0
 
   const flowNodes = useMemo(() => {
     if (!snapshot) return []
@@ -110,8 +139,12 @@ export function GraphCanvas() {
       filter,
       showFolders,
       graphDepth,
+      layerVisibility,
+      isolatedLayer,
+      focusNeighborhood,
+      hideLowImportance,
       userPositions,
-      dimUnrelated: true
+      dimOnSearch
     })
   }, [
     snapshot,
@@ -121,20 +154,47 @@ export function GraphCanvas() {
     filter,
     showFolders,
     graphDepth,
-    userPositions
+    layerVisibility,
+    isolatedLayer,
+    focusNeighborhood,
+    hideLowImportance,
+    userPositions,
+    dimOnSearch
   ])
+
+  const flowOpts = useMemo(
+    () => ({
+      searchQuery,
+      focusedNodeId,
+      selectedNodeId,
+      filter,
+      showFolders,
+      graphDepth,
+      layerVisibility,
+      isolatedLayer,
+      focusNeighborhood,
+      hideLowImportance,
+      userPositions
+    }),
+    [
+      searchQuery,
+      focusedNodeId,
+      selectedNodeId,
+      filter,
+      showFolders,
+      graphDepth,
+      layerVisibility,
+      isolatedLayer,
+      focusNeighborhood,
+      hideLowImportance,
+      userPositions
+    ]
+  )
 
   const flowEdges = useMemo(() => {
     if (!snapshot) return []
-    return toFlowEdges(snapshot, {
-      showFolders,
-      focusedNodeId,
-      selectedNodeId,
-      selectedEdgeId,
-      searchQuery,
-      graphDepth
-    })
-  }, [snapshot, showFolders, focusedNodeId, selectedNodeId, selectedEdgeId, searchQuery, graphDepth])
+    return toFlowEdges(snapshot, { ...flowOpts, selectedEdgeId })
+  }, [snapshot, flowOpts, selectedEdgeId])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges)
@@ -164,12 +224,34 @@ export function GraphCanvas() {
       setSelectedNodeId(node.id)
       setFocusedNodeId(node.id)
       setSelectedEdgeId(null)
+      setInspectorOpen(true)
     },
-    [setSelectedNodeId, setFocusedNodeId, setSelectedEdgeId]
+    [setSelectedNodeId, setFocusedNodeId, setSelectedEdgeId, setInspectorOpen]
   )
+
+  const onNodeContextMenu: NodeMouseHandler = useCallback(
+    (event, node) => {
+      event.preventDefault()
+      setSelectedNodeId(node.id)
+      setFocusedNodeId(node.id)
+      setSelectedEdgeId(null)
+      setInspectorOpen(true)
+      setContextMenu({ x: event.clientX, y: event.clientY, nodeId: node.id })
+    },
+    [setSelectedNodeId, setFocusedNodeId, setSelectedEdgeId, setInspectorOpen]
+  )
+
+  const onEdgeMouseEnter: EdgeMouseHandler = useCallback((_, edge) => {
+    hoveredEdgeIdRef.current = edge.id
+  }, [])
+
+  const onEdgeMouseLeave: EdgeMouseHandler = useCallback(() => {
+    hoveredEdgeIdRef.current = null
+  }, [])
 
   const onEdgeClick: EdgeMouseHandler = useCallback(
     (_, edge) => {
+      if (hoveredEdgeIdRef.current !== edge.id) return
       setSelectedEdgeId(edge.id)
       setSelectedNodeId(null)
     },
@@ -178,6 +260,7 @@ export function GraphCanvas() {
 
   const onPaneClick = useCallback(() => {
     setSelectedEdgeId(null)
+    setContextMenu(null)
   }, [setSelectedEdgeId])
 
   if (!snapshot) return null
@@ -190,18 +273,25 @@ export function GraphCanvas() {
         onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
+        onNodeContextMenu={onNodeContextMenu}
         onEdgeClick={onEdgeClick}
+        onEdgeMouseEnter={onEdgeMouseEnter}
+        onEdgeMouseLeave={onEdgeMouseLeave}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        defaultViewport={{ x: 0, y: 0, zoom: 0.95 }}
+        defaultViewport={{ x: 0, y: 0, zoom: 0.92 }}
         minZoom={0.15}
         maxZoom={2.5}
         proOptions={{ hideAttribution: true }}
-        panOnScroll
+        panOnScroll={panSensitivity >= 1}
         zoomOnScroll
         panOnDrag
         selectionOnDrag={false}
+        nodesDraggable
+        elementsSelectable
+        edgesFocusable={false}
+        autoPanOnNodeDrag={false}
         defaultEdgeOptions={{
           type: 'architecture',
           markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: 'rgba(255,255,255,0.2)' }
@@ -214,7 +304,7 @@ export function GraphCanvas() {
           size={1}
           color="rgba(255,255,255,0.035)"
         />
-        <InitialCameraController />
+        <InitialViewportController />
         <FocusCameraController />
         {showMinimap && (
           <MiniMap
@@ -232,6 +322,18 @@ export function GraphCanvas() {
       <NodeInspector />
       <EdgeInspector />
       <AiChatBubble />
+
+      <AnimatePresence>
+        {contextMenu && (
+          <NodeContextMenu
+            key={contextMenu.nodeId}
+            x={contextMenu.x}
+            y={contextMenu.y}
+            nodeId={contextMenu.nodeId}
+            onClose={() => setContextMenu(null)}
+          />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         <motion.div

@@ -5,24 +5,24 @@ export default {
     extend: {
       colors: {
         surface: {
-          DEFAULT: '#0a0a0b',
-          raised: '#111113',
-          overlay: '#18181b',
-          muted: '#27272a'
+          DEFAULT: 'var(--color-surface)',
+          raised: 'var(--color-surface-raised)',
+          overlay: 'var(--color-surface-overlay)',
+          muted: 'var(--color-surface-muted)'
         },
         accent: {
-          DEFAULT: '#6366f1',
-          soft: 'rgba(99, 102, 241, 0.15)',
-          glow: 'rgba(99, 102, 241, 0.4)'
+          DEFAULT: 'var(--color-accent)',
+          soft: 'var(--color-accent-soft)',
+          glow: 'var(--color-accent-glow)'
         },
         border: {
-          subtle: 'rgba(255, 255, 255, 0.06)',
-          DEFAULT: 'rgba(255, 255, 255, 0.1)'
+          subtle: 'var(--color-border-subtle)',
+          DEFAULT: 'var(--color-border)'
         },
         text: {
-          primary: '#fafafa',
-          secondary: '#a1a1aa',
-          muted: '#71717a'
+          primary: 'var(--color-text-primary)',
+          secondary: 'var(--color-text-secondary)',
+          muted: 'var(--color-text-muted)'
         }
       },
       fontFamily: {
@@ -36,8 +36,8 @@ export default {
         ]
       },
       boxShadow: {
-        glow: '0 0 40px rgba(99, 102, 241, 0.12)',
-        panel: '0 8px 32px rgba(0, 0, 0, 0.4)'
+        glow: 'var(--shadow-glow)',
+        panel: 'var(--shadow-panel)'
       },
       animation: {
         'fade-in': 'fadeIn 0.4s ease-out',

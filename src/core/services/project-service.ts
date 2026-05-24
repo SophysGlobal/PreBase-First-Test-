@@ -4,6 +4,7 @@ import { ParserEngine } from '../parser/parser-engine'
 import { GraphGenerator } from '../graph/graph-generator'
 import { LayoutEngine } from '../layout/layout-engine'
 import { WatcherEngine, type WatcherEvent } from '../watcher/watcher-engine'
+import { assignLayersToNodes } from '../utils/architecture-layers'
 import { detectEntryNodeId, readPackageMain } from '../utils/entry-detector'
 import { computeHierarchyLayout } from '../layout/hierarchy-layout'
 import type { GraphSnapshot, IncrementalUpdate, LayoutMode, ScannedFile } from '../types'
@@ -50,15 +51,14 @@ export class ProjectService {
 
     const positions = await this.layout.layout(layoutNodes, graph.edges, {
       mode: 'hierarchy',
-      entryNodeId
+      entryNodeId: entryNodeId ?? undefined
     })
 
-    const nodesWithMeta = graph.nodes.map((n) => {
-      if (n.id === entryNodeId) {
-        return { ...n, isEntry: true, depth: 0 }
-      }
+    const tagged = graph.nodes.map((n) => {
+      if (n.id === entryNodeId) return { ...n, isEntry: true, depth: 0 }
       return n
     })
+    const nodesWithMeta = assignLayersToNodes(tagged, entryNodeId)
 
     this.snapshot = {
       ...graph,
@@ -86,15 +86,16 @@ export class ProjectService {
     if (!this.snapshot) return null
 
     const layoutNodes = this.snapshot.nodes.filter((n) => n.kind !== 'folder')
+    const entryId = this.snapshot.entryNodeId
     const positions =
-      mode === 'hierarchy' && this.snapshot.entryNodeId
+      (mode === 'hierarchy' || mode === 'circular') && entryId
         ? computeHierarchyLayout(layoutNodes, this.snapshot.edges, {
-            entryNodeId: this.snapshot.entryNodeId,
-            layerSpacing: 220
+            entryNodeId: entryId,
+            layerSpacing: mode === 'circular' ? 300 : 240
           })
         : await this.layout.layout(layoutNodes, this.snapshot.edges, {
             mode,
-            entryNodeId: this.snapshot.entryNodeId,
+            entryNodeId: entryId,
             preservePositions: {}
           })
 
@@ -161,6 +162,7 @@ export class ProjectService {
 
     this.snapshot = {
       ...newGraph,
+      nodes: assignLayersToNodes(newGraph.nodes, entryNodeId),
       positions,
       entryNodeId,
       scannedAt: Date.now()
@@ -219,6 +221,7 @@ export class ProjectService {
 
     this.snapshot = {
       ...newGraph,
+      nodes: assignLayersToNodes(newGraph.nodes, this.snapshot.entryNodeId),
       positions,
       entryNodeId: this.snapshot.entryNodeId,
       scannedAt: Date.now()

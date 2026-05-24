@@ -1,10 +1,11 @@
-import { Code2, Network } from 'lucide-react'
+import { Code2, Network, Settings } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useGraphStore, type ViewMode } from '../../state/graph-store'
 
 const items: { id: ViewMode; icon: typeof Code2; label: string }[] = [
   { id: 'code', icon: Code2, label: 'Code' },
-  { id: 'graph', icon: Network, label: 'Graph' }
+  { id: 'graph', icon: Network, label: 'Graph' },
+  { id: 'settings', icon: Settings, label: 'Settings' }
 ]
 
 export function ActivityBar() {
@@ -23,12 +24,12 @@ export function ActivityBar() {
             key={id}
             onClick={() => setViewMode(id)}
             title={label}
-            className="relative flex items-center justify-center w-9 h-9 rounded-lg transition-colors group"
+            className="relative flex items-center justify-center w-9 h-9 rounded-lg transition-colors group titlebar-no-drag"
           >
             {active && (
               <motion.div
                 layoutId="activity-indicator"
-                className="absolute inset-0 bg-accent-soft rounded-lg border border-accent/20"
+                className="absolute inset-0 bg-accent-soft rounded-lg border border-accent/25"
                 transition={{ type: 'spring', stiffness: 500, damping: 35 }}
               />
             )}

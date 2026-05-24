@@ -17,6 +17,8 @@ export interface GraphNode {
     language?: string
     functionCount?: number
     componentCount?: number
+    architectureLayer?: string
+    importance?: number
   }
 }
 
@@ -87,4 +89,11 @@ export interface ScannedFile {
   extension: string
 }
 
-export type LayoutMode = 'hierarchy' | 'layered' | 'force' | 'clustered'
+export type LayoutMode =
+  | 'hierarchy'
+  | 'pyramid'
+  | 'circular'
+  | 'clustered'
+  | 'scattered'
+  | 'force'
+  | 'grid'

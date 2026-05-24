@@ -7,6 +7,7 @@ export interface PrebaseAPI {
   closeProject: () => Promise<{ success: boolean }>
   getSnapshot: () => Promise<GraphSnapshot | null>
   relayout: (mode: LayoutMode) => Promise<GraphSnapshot | null>
+  readFile: (relativePath: string) => Promise<string | null>
   onGraphFull: (callback: (snapshot: GraphSnapshot) => void) => () => void
   onGraphIncremental: (callback: (update: IncrementalUpdate) => void) => () => void
 }
@@ -17,6 +18,7 @@ const api: PrebaseAPI = {
   closeProject: () => ipcRenderer.invoke('project:close'),
   getSnapshot: () => ipcRenderer.invoke('project:get-snapshot'),
   relayout: (mode) => ipcRenderer.invoke('graph:relayout', mode),
+  readFile: (relativePath) => ipcRenderer.invoke('file:read', relativePath),
   onGraphFull: (callback) => {
     const handler = (_: Electron.IpcRendererEvent, snapshot: GraphSnapshot) => callback(snapshot)
     ipcRenderer.on('graph:full', handler)
