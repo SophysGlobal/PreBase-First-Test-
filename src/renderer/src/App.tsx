@@ -90,6 +90,7 @@ export default function App() {
 
   return (
     <motion.div className="flex h-screen w-screen bg-surface overflow-hidden">
+      <div className="macos-traffic-safe-zone" aria-hidden="true" />
       {snapshot && <ActivityBar />}
 
       {snapshot && (

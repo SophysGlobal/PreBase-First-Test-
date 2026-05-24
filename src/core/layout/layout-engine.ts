@@ -26,7 +26,7 @@ export class LayoutEngine {
     if (mode === 'hierarchy' && options.entryNodeId) {
       const positions = computeHierarchyLayout(layoutNodes, edges, {
         entryNodeId: options.entryNodeId,
-        layerSpacing: 220,
+        layerSpacing: 280,
         baseRadius: 0
       })
       return this.mergePreserved(positions, nodes, options.preservePositions)
@@ -121,15 +121,15 @@ export class LayoutEngine {
         return {
           'elk.algorithm': 'org.eclipse.elk.layered',
           'elk.direction': 'DOWN',
-          'elk.spacing.nodeNode': '70',
-          'elk.layered.spacing.nodeNodeBetweenLayers': '120'
+          'elk.spacing.nodeNode': '110',
+          'elk.layered.spacing.nodeNodeBetweenLayers': '180'
         }
       case 'layered':
         return {
           'elk.algorithm': 'org.eclipse.elk.layered',
           'elk.direction': 'RIGHT',
-          'elk.spacing.nodeNode': '60',
-          'elk.layered.spacing.nodeNodeBetweenLayers': '100',
+          'elk.spacing.nodeNode': '90',
+          'elk.layered.spacing.nodeNodeBetweenLayers': '150',
           'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX'
         }
       case 'hierarchy':

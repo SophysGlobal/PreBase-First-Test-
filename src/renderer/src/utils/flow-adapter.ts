@@ -1,6 +1,6 @@
 import type { Edge, Node } from '@xyflow/react'
 import type { GraphNode, GraphSnapshot } from '../../../core/types'
-import type { FilterKind } from '../state/graph-store'
+import type { FilterKind, LayerCategory } from '../state/graph-store'
 import { getNodesWithinDepth } from '../../../core/layout/hierarchy-layout'
 
 const KIND_COLORS: Record<string, string> = {
@@ -24,6 +24,8 @@ export function toFlowNodes(
     graphDepth: number
     userPositions: Record<string, { x: number; y: number }>
     dimUnrelated: boolean
+    activeLayers: LayerCategory[]
+    maxNodesVisible: number
   }
 ): Node[] {
   const query = options.searchQuery.toLowerCase().trim()
@@ -59,7 +61,7 @@ export function toFlowNodes(
 
   const hasHighlight = query.length > 0 || focusId !== null
 
-  return snapshot.nodes
+  const filteredNodes = snapshot.nodes
     .filter((node) => {
       if (depthVisible && !depthVisible.has(node.id)) return false
       if (!options.showFolders && node.kind === 'folder') return false
@@ -76,6 +78,13 @@ export function toFlowNodes(
           return node.kind !== 'folder' || options.showFolders
       }
     })
+    .filter((node) => options.activeLayers.includes(inferLayer(node)))
+
+  const prioritized = filteredNodes.sort((a, b) => scoreNodePriority(b) - scoreNodePriority(a))
+  const visibleSet = new Set(prioritized.slice(0, options.maxNodesVisible).map((n) => n.id))
+
+  return prioritized
+    .filter((node) => visibleSet.has(node.id) || node.id === snapshot.entryNodeId || node.id === options.selectedNodeId)
     .map((node) => {
       const pos = options.userPositions[node.id] ?? snapshot.positions[node.id] ?? { x: 0, y: 0 }
       const isMatch = !hasHighlight || matchIds.has(node.id)
@@ -125,7 +134,9 @@ export function toFlowEdges(
       showFolders: options.showFolders,
       graphDepth: options.graphDepth,
       userPositions: snapshot.positions,
-      dimUnrelated: false
+      dimUnrelated: false,
+      activeLayers: ['frontend','backend','auth','api','ui','database','services','utilities','core'],
+      maxNodesVisible: Number.MAX_SAFE_INTEGER
     }).map((n) => n.id)
   )
 
@@ -199,4 +210,27 @@ export function findNodeByQuery(nodes: GraphNode[], query: string): GraphNode | 
         n.path?.toLowerCase().includes(q)
     ) ?? nodes.find((n) => n.label.toLowerCase().includes(q)) ?? null
   )
+}
+
+
+function inferLayer(node: GraphNode): LayerCategory {
+  const path = (node.path ?? '').toLowerCase()
+  if (path.includes('auth')) return 'auth'
+  if (path.includes('api') || path.includes('route')) return 'api'
+  if (path.includes('db') || path.includes('database') || path.includes('prisma')) return 'database'
+  if (path.includes('service')) return 'services'
+  if (path.includes('component') || path.includes('/ui/') || node.kind === 'component') return 'ui'
+  if (path.includes('util') || path.includes('helper')) return 'utilities'
+  if (path.includes('server') || path.includes('backend')) return 'backend'
+  if (path.includes('client') || path.includes('frontend')) return 'frontend'
+  return 'core'
+}
+
+function scoreNodePriority(node: GraphNode): number {
+  let score = 0
+  if (node.isEntry) score += 100
+  if (node.kind === 'component') score += 25
+  if (node.kind === 'file') score += 15
+  score += node.meta?.imports?.length ?? 0
+  return score
 }

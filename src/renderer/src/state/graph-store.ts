@@ -3,6 +3,7 @@ import type { GraphSnapshot, IncrementalUpdate, LayoutMode } from '../../../core
 
 export type FilterKind = 'all' | 'files' | 'components' | 'imports' | 'folders'
 export type ViewMode = 'code' | 'graph'
+export type LayerCategory = 'frontend' | 'backend' | 'auth' | 'api' | 'ui' | 'database' | 'services' | 'utilities' | 'core'
 
 interface GraphStore {
   snapshot: GraphSnapshot | null
@@ -24,6 +25,8 @@ interface GraphStore {
   inspectorOpen: boolean
   userPositions: Record<string, { x: number; y: number }>
   initialCameraDone: boolean
+  activeLayers: LayerCategory[]
+  maxNodesVisible: number
 
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
@@ -45,6 +48,8 @@ interface GraphStore {
   setInspectorOpen: (open: boolean) => void
   updateUserPosition: (nodeId: string, position: { x: number; y: number }) => void
   setInitialCameraDone: (done: boolean) => void
+  toggleLayer: (layer: LayerCategory) => void
+  setMaxNodesVisible: (count: number) => void
   reset: () => void
 }
 
@@ -68,6 +73,8 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   inspectorOpen: true,
   userPositions: {},
   initialCameraDone: false,
+  activeLayers: ['frontend','backend','auth','api','ui','database','services','utilities','core'],
+  maxNodesVisible: 450,
 
   setLoading: (isLoading) => set({ isLoading }),
   setError: (error) => set({ error }),
@@ -132,6 +139,13 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       userPositions: { ...s.userPositions, [nodeId]: position }
     })),
   setInitialCameraDone: (initialCameraDone) => set({ initialCameraDone }),
+  toggleLayer: (layer) =>
+    set((s) => ({
+      activeLayers: s.activeLayers.includes(layer)
+        ? s.activeLayers.filter((l) => l !== layer)
+        : [...s.activeLayers, layer]
+    })),
+  setMaxNodesVisible: (maxNodesVisible) => set({ maxNodesVisible }),
   reset: () =>
     set({
       snapshot: null,

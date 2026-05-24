@@ -97,6 +97,8 @@ export function GraphCanvas() {
   const graphDepth = useGraphStore((s) => s.graphDepth)
   const userPositions = useGraphStore((s) => s.userPositions)
   const updateUserPosition = useGraphStore((s) => s.updateUserPosition)
+  const activeLayers = useGraphStore((s) => s.activeLayers)
+  const maxNodesVisible = useGraphStore((s) => s.maxNodesVisible)
   const setSelectedNodeId = useGraphStore((s) => s.setSelectedNodeId)
   const setSelectedEdgeId = useGraphStore((s) => s.setSelectedEdgeId)
   const setFocusedNodeId = useGraphStore((s) => s.setFocusedNodeId)
@@ -111,7 +113,9 @@ export function GraphCanvas() {
       showFolders,
       graphDepth,
       userPositions,
-      dimUnrelated: true
+      dimUnrelated: true,
+      activeLayers,
+      maxNodesVisible
     })
   }, [
     snapshot,
@@ -121,7 +125,9 @@ export function GraphCanvas() {
     filter,
     showFolders,
     graphDepth,
-    userPositions
+    userPositions,
+    activeLayers,
+    maxNodesVisible
   ])
 
   const flowEdges = useMemo(() => {
