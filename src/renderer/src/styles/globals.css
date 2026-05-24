@@ -72,3 +72,27 @@ body {
   fill: #3f3f46;
   stroke: none;
 }
+
+
+.macos-traffic-safe-zone {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  width: 92px;
+  height: 30px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.06);
+  backdrop-filter: blur(10px);
+  -webkit-app-region: drag;
+  pointer-events: none;
+  z-index: 80;
+}
+
+@media (max-width: 900px) {
+  .macos-traffic-safe-zone {
+    width: 84px;
+    height: 28px;
+  }
+}

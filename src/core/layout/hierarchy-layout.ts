@@ -15,7 +15,7 @@ export function computeHierarchyLayout(
   edges: GraphEdge[],
   options: HierarchyLayoutOptions
 ): Record<string, LayoutPosition> {
-  const { entryNodeId, layerSpacing = 200, baseRadius = 0, nodePadding = 28 } = options
+  const { entryNodeId, layerSpacing = 260, baseRadius = 0, nodePadding = 58 } = options
 
   const layoutNodes = nodes.filter((n) => n.kind !== 'folder')
   const nodeIds = new Set(layoutNodes.map((n) => n.id))

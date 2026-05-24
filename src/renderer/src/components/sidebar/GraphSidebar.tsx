@@ -9,7 +9,7 @@ import {
   SlidersHorizontal
 } from 'lucide-react'
 import { motion } from 'framer-motion'
-import { useGraphStore, type FilterKind } from '../../state/graph-store'
+import { useGraphStore, type FilterKind, type LayerCategory } from '../../state/graph-store'
 
 const filters: { id: FilterKind; label: string; icon: typeof FileCode }[] = [
   { id: 'all', label: 'All', icon: LayoutGrid },
@@ -40,6 +40,10 @@ export function GraphSidebar({ onRelayout }: GraphSidebarProps) {
   const showMinimap = useGraphStore((s) => s.showMinimap)
   const setShowMinimap = useGraphStore((s) => s.setShowMinimap)
   const layoutModeValue = useGraphStore((s) => s.layoutMode)
+  const activeLayers = useGraphStore((s) => s.activeLayers)
+  const toggleLayer = useGraphStore((s) => s.toggleLayer)
+  const maxNodesVisible = useGraphStore((s) => s.maxNodesVisible)
+  const setMaxNodesVisible = useGraphStore((s) => s.setMaxNodesVisible)
   const setLayoutMode = useGraphStore((s) => s.setLayoutMode)
 
   const fileNodes =
@@ -83,6 +87,23 @@ export function GraphSidebar({ onRelayout }: GraphSidebarProps) {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-md bg-surface-overlay border border-border-subtle text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/30"
             />
+          </div>
+
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5 px-0.5">Layers</p>
+            <div className="flex flex-wrap gap-1">
+              {(['frontend','backend','auth','api','ui','database','services','utilities','core'] as LayerCategory[]).map((layer) => (
+                <button key={layer} onClick={() => toggleLayer(layer)} className={`px-2 py-1 rounded text-[10px] capitalize transition-colors ${activeLayers.includes(layer) ? 'bg-accent-soft text-accent' : 'bg-surface-muted text-text-muted'}`}>
+                  {layer}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5 px-0.5">Density</p>
+            <input type="range" min={120} max={1200} step={30} value={maxNodesVisible} onChange={(e) => setMaxNodesVisible(Number(e.target.value))} className="w-full" />
+            <p className="text-[10px] text-text-muted mt-1">Visible nodes cap: {maxNodesVisible}</p>
           </div>
 
           <div>
