@@ -8,11 +8,15 @@ export interface GraphNode {
   label: string
   path?: string
   parentId?: string
+  isEntry?: boolean
+  depth?: number
   meta?: {
     exports?: string[]
     imports?: string[]
     isComponent?: boolean
     language?: string
+    functionCount?: number
+    componentCount?: number
   }
 }
 
@@ -21,6 +25,13 @@ export interface GraphEdge {
   source: string
   target: string
   kind: EdgeKind
+  meta?: {
+    importSource?: string
+    specifiers?: string[]
+    isDefault?: boolean
+    isDynamic?: boolean
+    line?: number
+  }
 }
 
 export interface LayoutPosition {
@@ -34,6 +45,7 @@ export interface GraphSnapshot {
   positions: Record<string, LayoutPosition>
   projectPath: string
   projectName: string
+  entryNodeId: string | null
   scannedAt: number
 }
 
@@ -75,4 +87,4 @@ export interface ScannedFile {
   extension: string
 }
 
-export type LayoutMode = 'layered' | 'force' | 'clustered'
+export type LayoutMode = 'hierarchy' | 'layered' | 'force' | 'clustered'

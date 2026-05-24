@@ -36,9 +36,21 @@ body {
   stroke-width: 1;
 }
 
-.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: rgba(245, 158, 11, 0.75) !important;
+}
+
 .react-flow__edge:hover .react-flow__edge-path {
-  stroke: rgba(99, 102, 241, 0.6);
+  stroke: rgba(99, 102, 241, 0.55) !important;
+  stroke-width: 1.5;
+}
+
+.react-flow__pane {
+  cursor: grab;
+}
+
+.react-flow__pane:active {
+  cursor: grabbing;
 }
 
 .react-flow__controls {

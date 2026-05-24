@@ -34,7 +34,7 @@ export class GraphGenerator {
     projectPath: string,
     projectName: string,
     results: ParseResult[]
-  ): Omit<GraphSnapshot, 'positions'> {
+  ): Omit<GraphSnapshot, 'positions' | 'entryNodeId'> {
     const nodes: GraphNode[] = []
     const edges: GraphEdge[] = []
     const nodeIds = new Set<string>()
@@ -89,7 +89,9 @@ export class GraphGenerator {
             exports: result.exports.map((e) => e.name),
             imports: result.imports.map((i) => i.source),
             isComponent: result.isComponentFile,
-            language: result.relativePath.split('.').pop()
+            language: result.relativePath.split('.').pop(),
+            functionCount: result.functions.length,
+            componentCount: result.components.length
           }
         })
 
@@ -143,11 +145,19 @@ export class GraphGenerator {
           })
         }
         const edgeId = `import:${fileId}->${targetId}:${imp.source}`
+        const isDynamic = imp.source.includes('?') || imp.specifiers.includes('dynamic')
         edges.push({
           id: edgeId,
           source: fileId,
           target: targetId,
-          kind: 'import'
+          kind: 'import',
+          meta: {
+            importSource: imp.source,
+            specifiers: imp.specifiers,
+            isDefault: imp.isDefault,
+            isDynamic,
+            line: imp.line
+          }
         })
       }
     }

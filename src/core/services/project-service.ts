@@ -4,13 +4,14 @@ import { ParserEngine } from '../parser/parser-engine'
 import { GraphGenerator } from '../graph/graph-generator'
 import { LayoutEngine } from '../layout/layout-engine'
 import { WatcherEngine, type WatcherEvent } from '../watcher/watcher-engine'
+import { detectEntryNodeId, readPackageMain } from '../utils/entry-detector'
+import { computeHierarchyLayout } from '../layout/hierarchy-layout'
 import type { GraphSnapshot, IncrementalUpdate, LayoutMode, ScannedFile } from '../types'
-import { nodeIdForPath } from '../utils/paths'
 
 export class ProjectService {
   private scanner = new FileScanner()
   private parser = new ParserEngine()
-  private graphGen = new GraphGenerator({ includeFolders: true, includeFunctions: false })
+  private graphGen = new GraphGenerator({ includeFolders: false, includeFunctions: false })
   private layout = new LayoutEngine()
   private watcher = new WatcherEngine()
 
@@ -32,7 +33,7 @@ export class ProjectService {
 
     const files = await this.scanner.scanProject(projectPath)
     const projectName = basename(projectPath)
-    const projectType = this.scanner.detectProjectType(projectPath, files)
+    const packageMain = await readPackageMain(projectPath)
 
     this.fileIndex = new Map(files.map((f) => [f.relativePath, f]))
 
@@ -40,21 +41,37 @@ export class ProjectService {
     const graph = this.graphGen.buildFromParseResults(projectPath, projectName, parseResults)
 
     const layoutNodes = graph.nodes.filter((n) => n.kind !== 'folder')
-    const positions = await this.layout.layout(layoutNodes.length ? layoutNodes : graph.nodes, graph.edges, {
-      mode: 'layered' as LayoutMode
+    const entryNodeId = detectEntryNodeId(
+      projectPath,
+      layoutNodes,
+      graph.edges,
+      packageMain
+    )
+
+    const positions = await this.layout.layout(layoutNodes, graph.edges, {
+      mode: 'hierarchy',
+      entryNodeId
+    })
+
+    const nodesWithMeta = graph.nodes.map((n) => {
+      if (n.id === entryNodeId) {
+        return { ...n, isEntry: true, depth: 0 }
+      }
+      return n
     })
 
     this.snapshot = {
       ...graph,
+      nodes: nodesWithMeta,
       positions,
       projectPath,
       projectName,
+      entryNodeId,
       scannedAt: Date.now()
     }
 
     this.watcher.start(projectPath, (events) => void this.handleWatcherEvents(events))
 
-    void projectType
     return this.snapshot
   }
 
@@ -65,15 +82,21 @@ export class ProjectService {
     this.onUpdate = null
   }
 
-  async relayout(mode: LayoutMode = 'layered'): Promise<GraphSnapshot | null> {
+  async relayout(mode: LayoutMode = 'hierarchy'): Promise<GraphSnapshot | null> {
     if (!this.snapshot) return null
 
     const layoutNodes = this.snapshot.nodes.filter((n) => n.kind !== 'folder')
-    const positions = await this.layout.layout(
-      layoutNodes.length ? layoutNodes : this.snapshot.nodes,
-      this.snapshot.edges,
-      { mode, preservePositions: {} }
-    )
+    const positions =
+      mode === 'hierarchy' && this.snapshot.entryNodeId
+        ? computeHierarchyLayout(layoutNodes, this.snapshot.edges, {
+            entryNodeId: this.snapshot.entryNodeId,
+            layerSpacing: 220
+          })
+        : await this.layout.layout(layoutNodes, this.snapshot.edges, {
+            mode,
+            entryNodeId: this.snapshot.entryNodeId,
+            preservePositions: {}
+          })
 
     this.snapshot = { ...this.snapshot, positions, scannedAt: Date.now() }
     this.onUpdate?.(this.snapshot, true)
@@ -124,14 +147,24 @@ export class ProjectService {
 
     const diff = this.graphGen.diff(this.snapshot, newGraph)
     const layoutNodes = newGraph.nodes.filter((n) => n.kind !== 'folder')
+    const entryNodeId =
+      this.snapshot.entryNodeId ??
+      detectEntryNodeId(projectPath, layoutNodes, newGraph.edges, null)
+
     const positions = await this.layout.layoutIncremental(
       layoutNodes,
       newGraph.edges,
       this.snapshot.positions,
-      [...diff.addedNodes.map((n) => n.id), ...diff.removedNodeIds]
+      [...diff.addedNodes.map((n) => n.id), ...diff.removedNodeIds],
+      entryNodeId
     )
 
-    this.snapshot = { ...newGraph, positions, scannedAt: Date.now() }
+    this.snapshot = {
+      ...newGraph,
+      positions,
+      entryNodeId,
+      scannedAt: Date.now()
+    }
     this.onUpdate({ ...diff, positions }, false)
   }
 
@@ -146,7 +179,7 @@ export class ProjectService {
 
     if (filesToParse.length === 0) return
 
-    const newResults = await this.parser.parseFiles(filesToParse)
+    await this.parser.parseFiles(filesToParse)
     const allResults = await this.buildAllParseResults()
     const newGraph = this.graphGen.buildFromParseResults(
       this.snapshot.projectPath,
@@ -176,14 +209,20 @@ export class ProjectService {
       layoutNodes,
       newGraph.edges,
       this.snapshot.positions,
-      changedIds
+      changedIds,
+      this.snapshot.entryNodeId
     )
 
     for (const id of diff.removedNodeIds) {
       delete positions[id]
     }
 
-    this.snapshot = { ...newGraph, positions, scannedAt: Date.now() }
+    this.snapshot = {
+      ...newGraph,
+      positions,
+      entryNodeId: this.snapshot.entryNodeId,
+      scannedAt: Date.now()
+    }
     this.onUpdate({ ...diff, positions }, false)
   }
 

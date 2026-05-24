@@ -24,6 +24,7 @@
   "include": [
     "src/renderer/src/**/*",
     "src/core/types.ts",
+    "src/core/layout/hierarchy-layout.ts",
     "src/preload/index.ts"
   ]
 }

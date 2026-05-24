@@ -1,9 +1,11 @@
 import ELK, { type ElkNode } from 'elkjs/lib/elk.bundled.js'
 import type { GraphEdge, GraphNode, LayoutMode, LayoutPosition } from '../types'
+import { computeHierarchyLayout } from './hierarchy-layout'
 
 export interface LayoutOptions {
   mode?: LayoutMode
   preservePositions?: Record<string, LayoutPosition>
+  entryNodeId?: string | null
   width?: number
   height?: number
 }
@@ -16,23 +18,23 @@ export class LayoutEngine {
     edges: GraphEdge[],
     options: LayoutOptions = {}
   ): Promise<Record<string, LayoutPosition>> {
-    const mode = options.mode ?? 'layered'
-    const fileNodes = nodes.filter((n) => n.kind !== 'folder' || mode === 'clustered')
-    const layoutNodes =
-      mode === 'clustered'
-        ? nodes.filter((n) => n.kind === 'folder' || n.kind === 'file' || n.kind === 'component')
-        : fileNodes.length > 0
-          ? fileNodes
-          : nodes
+    const mode = options.mode ?? 'hierarchy'
+    const layoutNodes = nodes.filter((n) => n.kind !== 'folder')
 
     if (layoutNodes.length === 0) return {}
 
+    if (mode === 'hierarchy' && options.entryNodeId) {
+      const positions = computeHierarchyLayout(layoutNodes, edges, {
+        entryNodeId: options.entryNodeId,
+        layerSpacing: 220,
+        baseRadius: 0
+      })
+      return this.mergePreserved(positions, nodes, options.preservePositions)
+    }
+
     const nodeIds = new Set(layoutNodes.map((n) => n.id))
     const layoutEdges = edges.filter(
-      (e) =>
-        e.kind === 'import' &&
-        nodeIds.has(e.source) &&
-        nodeIds.has(e.target)
+      (e) => e.kind === 'import' && nodeIds.has(e.source) && nodeIds.has(e.target)
     )
 
     const elkGraph: ElkNode = {
@@ -40,8 +42,8 @@ export class LayoutEngine {
       layoutOptions: this.getLayoutOptions(mode),
       children: layoutNodes.map((n) => ({
         id: n.id,
-        width: this.nodeWidth(n),
-        height: this.nodeHeight(n)
+        width: this.nodeWidth(n, n.isEntry),
+        height: this.nodeHeight(n, n.isEntry)
       })),
       edges: layoutEdges.map((e) => ({
         id: e.id,
@@ -61,13 +63,7 @@ export class LayoutEngine {
         }
       }
 
-      for (const node of nodes) {
-        if (!positions[node.id] && options.preservePositions?.[node.id]) {
-          positions[node.id] = options.preservePositions[node.id]
-        }
-      }
-
-      return positions
+      return this.mergePreserved(positions, nodes, options.preservePositions)
     } catch {
       return this.fallbackGridLayout(layoutNodes, options.preservePositions)
     }
@@ -77,20 +73,41 @@ export class LayoutEngine {
     nodes: GraphNode[],
     edges: GraphEdge[],
     existingPositions: Record<string, LayoutPosition>,
-    changedNodeIds: string[]
+    changedNodeIds: string[],
+    entryNodeId?: string | null
   ): Promise<Record<string, LayoutPosition>> {
     const changed = new Set(changedNodeIds)
-    const preserve: Record<string, LayoutPosition> = { ...existingPositions }
+    const hasNewNodes = nodes.some((n) => changed.has(n.id) || !existingPositions[n.id])
 
-    const nodesToLayout = nodes.filter((n) => changed.has(n.id) || !existingPositions[n.id])
-    if (nodesToLayout.length === 0) return existingPositions
+    if (hasNewNodes && entryNodeId) {
+      const layoutNodes = nodes.filter((n) => n.kind !== 'folder')
+      const fresh = computeHierarchyLayout(layoutNodes, edges, {
+        entryNodeId,
+        layerSpacing: 220
+      })
+      for (const id of Object.keys(existingPositions)) {
+        if (!changed.has(id) && existingPositions[id]) {
+          fresh[id] = existingPositions[id]
+        }
+      }
+      return fresh
+    }
 
-    const newPositions = await this.layout(nodesToLayout, edges, {
-      preservePositions: preserve,
-      mode: 'layered'
-    })
+    return { ...existingPositions }
+  }
 
-    return { ...existingPositions, ...newPositions }
+  private mergePreserved(
+    positions: Record<string, LayoutPosition>,
+    nodes: GraphNode[],
+    preserve?: Record<string, LayoutPosition>
+  ): Record<string, LayoutPosition> {
+    const merged = { ...positions }
+    for (const node of nodes) {
+      if (!merged[node.id] && preserve?.[node.id]) {
+        merged[node.id] = preserve[node.id]
+      }
+    }
+    return merged
   }
 
   private getLayoutOptions(mode: LayoutMode): Record<string, string> {
@@ -98,37 +115,40 @@ export class LayoutEngine {
       case 'force':
         return {
           'elk.algorithm': 'org.eclipse.elk.force',
-          'elk.spacing.nodeNode': '80'
+          'elk.spacing.nodeNode': '100'
         }
       case 'clustered':
         return {
           'elk.algorithm': 'org.eclipse.elk.layered',
           'elk.direction': 'DOWN',
-          'elk.spacing.nodeNode': '60',
-          'elk.layered.spacing.nodeNodeBetweenLayers': '100'
+          'elk.spacing.nodeNode': '70',
+          'elk.layered.spacing.nodeNodeBetweenLayers': '120'
         }
       case 'layered':
+        return {
+          'elk.algorithm': 'org.eclipse.elk.layered',
+          'elk.direction': 'RIGHT',
+          'elk.spacing.nodeNode': '60',
+          'elk.layered.spacing.nodeNodeBetweenLayers': '100',
+          'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX'
+        }
+      case 'hierarchy':
       default:
         return {
           'elk.algorithm': 'org.eclipse.elk.layered',
           'elk.direction': 'RIGHT',
-          'elk.spacing.nodeNode': '50',
-          'elk.layered.spacing.nodeNodeBetweenLayers': '80',
-          'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX'
+          'elk.spacing.nodeNode': '60'
         }
     }
   }
 
-  private nodeWidth(node: GraphNode): number {
-    if (node.kind === 'folder') return 140
-    if (node.kind === 'function') return 120
-    return Math.min(200, 80 + node.label.length * 7)
+  private nodeWidth(node: GraphNode, isEntry?: boolean): number {
+    const base = isEntry ? 200 : node.kind === 'folder' ? 140 : 160
+    return Math.min(base, 80 + node.label.length * 7)
   }
 
-  private nodeHeight(node: GraphNode): number {
-    if (node.kind === 'folder') return 36
-    if (node.kind === 'function') return 32
-    return 40
+  private nodeHeight(node: GraphNode, isEntry?: boolean): number {
+    return isEntry ? 52 : node.kind === 'folder' ? 36 : 44
   }
 
   private fallbackGridLayout(
@@ -145,7 +165,7 @@ export class LayoutEngine {
       }
       const col = i % cols
       const row = Math.floor(i / cols)
-      positions[node.id] = { x: col * 220, y: row * 100 }
+      positions[node.id] = { x: col * 240, y: row * 110 }
     })
 
     return positions
