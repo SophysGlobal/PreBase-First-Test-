@@ -1,4 +1,4 @@
-# PreBase
+# PreBase .
 
 AI-native, real-time codebase visualization for developers. Transform local projects into living architecture graphs.
 
