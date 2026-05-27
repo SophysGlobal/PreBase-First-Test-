@@ -1,4 +1,6 @@
 import {
+  ChevronDown,
+  ChevronRight,
   FileCode,
   GitBranch,
   Layers,
@@ -7,6 +9,7 @@ import {
   Search,
   SlidersHorizontal
 } from 'lucide-react'
+import { useState } from 'react'
 import type { LayoutMode } from '../../../../core/types'
 import { useGraphStore, type FilterKind } from '../../state/graph-store'
 import { GraphLayersPanel } from './GraphLayersPanel'
@@ -32,29 +35,18 @@ export function GraphSidebar({ onRelayout }: GraphSidebarProps) {
   const setFilter = useGraphStore((s) => s.setFilter)
   const searchQuery = useGraphStore((s) => s.searchQuery)
   const setSearchQuery = useGraphStore((s) => s.setSearchQuery)
-  const snapshot = useGraphStore((s) => s.snapshot)
-  const focusedNodeId = useGraphStore((s) => s.focusedNodeId)
-  const setFocusedNodeId = useGraphStore((s) => s.setFocusedNodeId)
-  const setSelectedNodeId = useGraphStore((s) => s.setSelectedNodeId)
   const graphDepth = useGraphStore((s) => s.graphDepth)
   const setGraphDepth = useGraphStore((s) => s.setGraphDepth)
   const showLegend = useGraphStore((s) => s.showLegend)
   const setShowLegend = useGraphStore((s) => s.setShowLegend)
   const showMinimap = useGraphStore((s) => s.showMinimap)
   const setShowMinimap = useGraphStore((s) => s.setShowMinimap)
+  const showFolders = useGraphStore((s) => s.showFolders)
+  const setShowFolders = useGraphStore((s) => s.setShowFolders)
   const layoutModeValue = useGraphStore((s) => s.layoutMode)
   const setLayoutMode = useGraphStore((s) => s.setLayoutMode)
-  const openFileInCodeView = useGraphStore((s) => s.openFileInCodeView)
-  const setInspectorOpen = useGraphStore((s) => s.setInspectorOpen)
 
-  const fileNodes =
-    snapshot?.nodes.filter((n) => n.kind === 'file' || n.kind === 'component') ?? []
-
-  const filteredFiles = fileNodes.filter((n) => {
-    const q = searchQuery.toLowerCase()
-    if (!q) return true
-    return n.label.toLowerCase().includes(q) || n.path?.toLowerCase().includes(q)
-  })
+  const [layoutOpen, setLayoutOpen] = useState(false)
 
   return (
     <CollapsibleSidebar
@@ -63,12 +55,12 @@ export function GraphSidebar({ onRelayout }: GraphSidebarProps) {
       title="Graph"
       railIcon={<SlidersHorizontal className="w-4 h-4" />}
     >
-      <div className="p-2 space-y-3 pb-4">
+      <div className="p-2 space-y-2.5 pb-4">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
           <input
             type="text"
-            placeholder="Search dependencies..."
+            placeholder="Search..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-md bg-surface-overlay border border-border-subtle text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/40"
@@ -76,7 +68,7 @@ export function GraphSidebar({ onRelayout }: GraphSidebarProps) {
         </div>
 
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5 px-0.5">
+          <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1 px-0.5">
             Filter
           </p>
           <div className="flex flex-wrap gap-1">
@@ -101,8 +93,8 @@ export function GraphSidebar({ onRelayout }: GraphSidebarProps) {
         <GraphLayersPanel />
 
         <div>
-          <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5 px-0.5 flex items-center gap-1">
-            Depth from entry
+          <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1 px-0.5 flex items-center gap-1">
+            Depth
             <InfoTooltip title={DEPTH_HELP.title} body={DEPTH_HELP.body} side="bottom" />
           </p>
           <div className="flex gap-1">
@@ -123,39 +115,50 @@ export function GraphSidebar({ onRelayout }: GraphSidebarProps) {
           </div>
         </div>
 
-        <div>
-          <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5 px-0.5">
-            Organization
-          </p>
-          <div className="space-y-1">
-            {LAYOUT_PRESETS.map((mode) => (
-              <div key={mode} className="flex items-center gap-0.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLayoutMode(mode)
-                    onRelayout(mode)
-                  }}
-                  className={`flex-1 px-2 py-1 rounded text-[10px] capitalize transition-colors text-left ${
-                    layoutModeValue === mode
-                      ? 'bg-accent-soft text-accent'
-                      : 'bg-surface-muted text-text-muted hover:text-text-secondary'
-                  }`}
-                >
-                  {mode}
-                </button>
-                <InfoTooltip
-                  title={LAYOUT_MODE_HELP[mode].title}
-                  body={LAYOUT_MODE_HELP[mode].body}
-                  side="right"
-                />
-              </div>
-            ))}
-          </div>
+        <div className="border border-border-subtle rounded-lg overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setLayoutOpen((v) => !v)}
+            className="w-full flex items-center justify-between px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-text-muted hover:bg-surface-muted/40 transition-colors"
+          >
+            Layout
+            {layoutOpen ? (
+              <ChevronDown className="w-3 h-3" />
+            ) : (
+              <ChevronRight className="w-3 h-3" />
+            )}
+          </button>
+          {layoutOpen && (
+            <div className="px-2 pb-2 space-y-0.5">
+              {LAYOUT_PRESETS.map((mode) => (
+                <div key={mode} className="flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLayoutMode(mode)
+                      onRelayout(mode)
+                    }}
+                    className={`flex-1 px-2 py-1 rounded text-[10px] capitalize transition-colors text-left ${
+                      layoutModeValue === mode
+                        ? 'bg-accent-soft text-accent'
+                        : 'text-text-muted hover:bg-surface-muted'
+                    }`}
+                  >
+                    {mode}
+                  </button>
+                  <InfoTooltip
+                    title={LAYOUT_MODE_HELP[mode].title}
+                    body={LAYOUT_MODE_HELP[mode].body}
+                    side="right"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        <div className="space-y-1.5">
-          <label className="flex items-center justify-between text-[11px] text-text-secondary cursor-pointer">
+        <div className="space-y-1 pt-0.5 border-t border-border-subtle">
+          <label className="flex items-center justify-between text-[11px] text-text-secondary cursor-pointer py-0.5">
             <span className="flex items-center gap-1.5">
               <Map className="w-3 h-3" /> Legend
             </span>
@@ -166,7 +169,7 @@ export function GraphSidebar({ onRelayout }: GraphSidebarProps) {
               className="accent-teal-400"
             />
           </label>
-          <label className="flex items-center justify-between text-[11px] text-text-secondary cursor-pointer">
+          <label className="flex items-center justify-between text-[11px] text-text-secondary cursor-pointer py-0.5">
             <span>Minimap</span>
             <input
               type="checkbox"
@@ -175,41 +178,15 @@ export function GraphSidebar({ onRelayout }: GraphSidebarProps) {
               className="accent-teal-400"
             />
           </label>
-        </div>
-
-        <div>
-          <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5 px-0.5">
-            Nodes
-          </p>
-          <div className="space-y-0.5 max-h-[280px] overflow-y-auto sidebar-scroll pr-0.5">
-            {filteredFiles.slice(0, 150).map((node) => (
-              <button
-                key={node.id}
-                type="button"
-                onClick={() => {
-                  setSelectedNodeId(node.id)
-                  setFocusedNodeId(node.id)
-                  setInspectorOpen(true)
-                }}
-                onDoubleClick={() => openFileInCodeView(node.id)}
-                className={`w-full flex items-center gap-2 px-2 py-1 rounded-md text-left text-xs transition-colors ${
-                  focusedNodeId === node.id
-                    ? 'bg-accent-soft text-text-primary'
-                    : 'text-text-secondary hover:bg-surface-muted'
-                }`}
-              >
-                {node.isEntry && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-                )}
-                {node.kind === 'component' ? (
-                  <Layers className="w-3.5 h-3.5 shrink-0 text-purple-400" />
-                ) : (
-                  <FileCode className="w-3.5 h-3.5 shrink-0 text-accent" />
-                )}
-                <span className="truncate">{node.label}</span>
-              </button>
-            ))}
-          </div>
+          <label className="flex items-center justify-between text-[11px] text-text-secondary cursor-pointer py-0.5">
+            <span>Folder nodes</span>
+            <input
+              type="checkbox"
+              checked={showFolders}
+              onChange={(e) => setShowFolders(e.target.checked)}
+              className="accent-teal-400"
+            />
+          </label>
         </div>
       </div>
     </CollapsibleSidebar>

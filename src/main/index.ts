@@ -101,9 +101,13 @@ app.whenReady().then(() => {
     if (!snapshot || !filePath) return null
     try {
       const fullPath = resolveProjectFilePath(snapshot.projectPath, filePath)
-      if (!fullPath) return null
+      if (!fullPath) {
+        console.warn('[file:read] unresolved path:', filePath, 'project:', snapshot.projectPath)
+        return null
+      }
       return await readFile(fullPath, 'utf-8')
-    } catch {
+    } catch (err) {
+      console.warn('[file:read] failed:', filePath, err)
       return null
     }
   })

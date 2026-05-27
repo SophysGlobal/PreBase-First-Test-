@@ -29,7 +29,9 @@ export class LayoutEngine {
     if ((mode === 'hierarchy' || mode === 'circular') && options.entryNodeId) {
       const positions = computeHierarchyLayout(layoutNodes, edges, {
         entryNodeId: options.entryNodeId,
-        layerSpacing: mode === 'circular' ? 300 : 240,
+        layerSpacing: mode === 'circular' ? 185 : 165,
+        nodePadding: 68,
+        clusterSeparation: 240,
         baseRadius: 0
       })
       return this.mergePreserved(positions, nodes, options.preservePositions)
@@ -37,7 +39,7 @@ export class LayoutEngine {
 
     if (mode === 'grid') {
       return this.mergePreserved(
-        this.gridLayout(layoutNodes, 220, 100),
+        this.gridLayout(layoutNodes, 185, 78),
         nodes,
         options.preservePositions
       )
@@ -78,7 +80,7 @@ export class LayoutEngine {
       return this.mergePreserved(positions, nodes, options.preservePositions)
     } catch {
       return this.mergePreserved(
-        this.gridLayout(layoutNodes, 240, 110),
+        this.gridLayout(layoutNodes, 195, 85),
         nodes,
         options.preservePositions
       )
@@ -131,27 +133,27 @@ export class LayoutEngine {
       case 'force':
         return {
           'elk.algorithm': 'org.eclipse.elk.force',
-          'elk.spacing.nodeNode': '110'
+          'elk.spacing.nodeNode': '82'
         }
       case 'scattered':
         return {
           'elk.algorithm': 'org.eclipse.elk.force',
-          'elk.spacing.nodeNode': '150',
-          'elk.force.iterations': '300'
+          'elk.spacing.nodeNode': '88',
+          'elk.force.iterations': '220'
         }
       case 'clustered':
         return {
           'elk.algorithm': 'org.eclipse.elk.layered',
           'elk.direction': 'DOWN',
-          'elk.spacing.nodeNode': '80',
-          'elk.layered.spacing.nodeNodeBetweenLayers': '140'
+          'elk.spacing.nodeNode': '58',
+          'elk.layered.spacing.nodeNodeBetweenLayers': '88'
         }
       case 'pyramid':
         return {
           'elk.algorithm': 'org.eclipse.elk.layered',
           'elk.direction': 'DOWN',
-          'elk.spacing.nodeNode': '70',
-          'elk.layered.spacing.nodeNodeBetweenLayers': '110',
+          'elk.spacing.nodeNode': '52',
+          'elk.layered.spacing.nodeNodeBetweenLayers': '72',
           'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX'
         }
       case 'grid':

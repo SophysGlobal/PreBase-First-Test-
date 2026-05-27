@@ -45,27 +45,15 @@ function InitialViewportController() {
         return
       }
 
-      const entryId = snapshot.entryNodeId
-      const focusNodes = entryId
-        ? nodes.filter((n) => {
-            if (n.id === entryId) return true
-            const d = Math.hypot(
-              n.position.x - (nodes.find((x) => x.id === entryId)?.position.x ?? 0),
-              n.position.y - (nodes.find((x) => x.id === entryId)?.position.y ?? 0)
-            )
-            return d < 900
-          })
-        : nodes
-
       void fitView({
-        nodes: focusNodes.length > 0 ? focusNodes : nodes,
-        padding: 0.32,
-        minZoom: 0.5,
-        maxZoom: Math.max(0.75, initialZoom),
-        duration: 850
+        nodes,
+        padding: 0.2,
+        minZoom: 0.55,
+        maxZoom: Math.min(1.05, Math.max(0.82, initialZoom)),
+        duration: 750
       })
       setInitialCameraDone(true)
-    }, 200)
+    }, 180)
 
     return () => clearTimeout(t)
   }, [snapshot, initialCameraDone, getNodes, fitView, setInitialCameraDone, initialZoom])
@@ -90,9 +78,9 @@ function FocusCameraController() {
     if (!node) return
 
     const t = setTimeout(() => {
-      void setCenter(node.position.x + 85, node.position.y + 26, {
-        zoom: 1.05,
-        duration: 650
+      void setCenter(node.position.x + 84, node.position.y + 26, {
+        zoom: 1.02,
+        duration: 550
       })
     }, 40)
     return () => clearTimeout(t)
@@ -116,11 +104,13 @@ export function GraphCanvas() {
   const focusNeighborhood = useGraphStore((s) => s.focusNeighborhood)
   const hideLowImportance = useGraphStore((s) => s.hideLowImportance)
   const userPositions = useGraphStore((s) => s.userPositions)
+  const expandedFolderIds = useGraphStore((s) => s.expandedFolderIds)
   const updateUserPosition = useGraphStore((s) => s.updateUserPosition)
   const setSelectedNodeId = useGraphStore((s) => s.setSelectedNodeId)
   const setSelectedEdgeId = useGraphStore((s) => s.setSelectedEdgeId)
   const setFocusedNodeId = useGraphStore((s) => s.setFocusedNodeId)
   const setInspectorOpen = useGraphStore((s) => s.setInspectorOpen)
+  const toggleFolderExpand = useGraphStore((s) => s.toggleFolderExpand)
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string } | null>(
     null
@@ -144,7 +134,8 @@ export function GraphCanvas() {
       focusNeighborhood,
       hideLowImportance,
       userPositions,
-      dimOnSearch
+      dimOnSearch,
+      expandedFolderIds
     })
   }, [
     snapshot,
@@ -159,7 +150,8 @@ export function GraphCanvas() {
     focusNeighborhood,
     hideLowImportance,
     userPositions,
-    dimOnSearch
+    dimOnSearch,
+    expandedFolderIds
   ])
 
   const flowOpts = useMemo(
@@ -174,7 +166,8 @@ export function GraphCanvas() {
       isolatedLayer,
       focusNeighborhood,
       hideLowImportance,
-      userPositions
+      userPositions,
+      expandedFolderIds
     }),
     [
       searchQuery,
@@ -187,7 +180,8 @@ export function GraphCanvas() {
       isolatedLayer,
       focusNeighborhood,
       hideLowImportance,
-      userPositions
+      userPositions,
+      expandedFolderIds
     ]
   )
 
@@ -221,12 +215,23 @@ export function GraphCanvas() {
 
   const onNodeClick: NodeMouseHandler = useCallback(
     (_, node) => {
+      const kind = (node.data as { kind?: string })?.kind
+      if (kind === 'folder') {
+        toggleFolderExpand(node.id)
+        return
+      }
       setSelectedNodeId(node.id)
       setFocusedNodeId(node.id)
       setSelectedEdgeId(null)
       setInspectorOpen(true)
     },
-    [setSelectedNodeId, setFocusedNodeId, setSelectedEdgeId, setInspectorOpen]
+    [
+      toggleFolderExpand,
+      setSelectedNodeId,
+      setFocusedNodeId,
+      setSelectedEdgeId,
+      setInspectorOpen
+    ]
   )
 
   const onNodeContextMenu: NodeMouseHandler = useCallback(
@@ -280,9 +285,9 @@ export function GraphCanvas() {
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        defaultViewport={{ x: 0, y: 0, zoom: 0.92 }}
-        minZoom={0.15}
-        maxZoom={2.5}
+        defaultViewport={{ x: 0, y: 0, zoom: 0.88 }}
+        minZoom={0.2}
+        maxZoom={2.2}
         proOptions={{ hideAttribution: true }}
         panOnScroll={panSensitivity >= 1}
         zoomOnScroll
@@ -294,13 +299,18 @@ export function GraphCanvas() {
         autoPanOnNodeDrag={false}
         defaultEdgeOptions={{
           type: 'architecture',
-          markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: 'rgba(255,255,255,0.2)' }
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 12,
+            height: 12,
+            color: 'rgba(255,255,255,0.2)'
+          }
         }}
         className="bg-transparent"
       >
         <Background
           variant={BackgroundVariant.Dots}
-          gap={28}
+          gap={24}
           size={1}
           color="rgba(255,255,255,0.035)"
         />
@@ -343,13 +353,7 @@ export function GraphCanvas() {
         >
           <span>{flowNodes.length} visible</span>
           <span className="w-px h-3 bg-border-subtle" />
-          <span>{flowEdges.length} dependencies</span>
-          {snapshot.entryNodeId && (
-            <>
-              <span className="w-px h-3 bg-border-subtle" />
-              <span className="text-amber-400/90">Centered on entry</span>
-            </>
-          )}
+          <span>{flowEdges.filter((e) => (e.data as { variant?: string })?.variant !== 'contains').length} links</span>
         </motion.div>
       </AnimatePresence>
     </div>

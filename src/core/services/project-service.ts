@@ -7,17 +7,19 @@ import { WatcherEngine, type WatcherEvent } from '../watcher/watcher-engine'
 import { assignLayersToNodes } from '../utils/architecture-layers'
 import { detectEntryNodeId, readPackageMain } from '../utils/entry-detector'
 import { computeHierarchyLayout } from '../layout/hierarchy-layout'
+import { loadTsconfigPaths, type PathMappings } from '../utils/tsconfig-paths'
 import type { GraphSnapshot, IncrementalUpdate, LayoutMode, ScannedFile } from '../types'
 
 export class ProjectService {
   private scanner = new FileScanner()
   private parser = new ParserEngine()
-  private graphGen = new GraphGenerator({ includeFolders: false, includeFunctions: false })
+  private graphGen = new GraphGenerator({ includeFolders: true, includeFunctions: false })
   private layout = new LayoutEngine()
   private watcher = new WatcherEngine()
 
   private snapshot: GraphSnapshot | null = null
   private fileIndex = new Map<string, ScannedFile>()
+  private pathMappings: PathMappings = {}
   private onUpdate: ((payload: GraphSnapshot | IncrementalUpdate, full: boolean) => void) | null =
     null
 
@@ -35,6 +37,12 @@ export class ProjectService {
     const files = await this.scanner.scanProject(projectPath)
     const projectName = basename(projectPath)
     const packageMain = await readPackageMain(projectPath)
+    this.pathMappings = loadTsconfigPaths(projectPath)
+    this.graphGen = new GraphGenerator({
+      includeFolders: true,
+      includeFunctions: false,
+      pathMappings: this.pathMappings
+    })
 
     this.fileIndex = new Map(files.map((f) => [f.relativePath, f]))
 
@@ -49,10 +57,24 @@ export class ProjectService {
       packageMain
     )
 
-    const positions = await this.layout.layout(layoutNodes, graph.edges, {
+    const allNodesForLayout = graph.nodes.filter((n) => n.kind !== 'folder')
+    const positions = await this.layout.layout(allNodesForLayout, graph.edges, {
       mode: 'hierarchy',
       entryNodeId: entryNodeId ?? undefined
     })
+
+    // Place folder nodes near centroid of their children
+    for (const folder of graph.nodes.filter((n) => n.kind === 'folder')) {
+      const children = graph.nodes.filter((n) => n.parentId === folder.id && positions[n.id])
+      if (children.length > 0) {
+        positions[folder.id] = {
+          x: children.reduce((s, c) => s + positions[c.id].x, 0) / children.length,
+          y: children.reduce((s, c) => s + positions[c.id].y, 0) / children.length
+        }
+      } else {
+        positions[folder.id] = { x: 0, y: 0 }
+      }
+    }
 
     const tagged = graph.nodes.map((n) => {
       if (n.id === entryNodeId) return { ...n, isEntry: true, depth: 0 }
@@ -91,13 +113,27 @@ export class ProjectService {
       (mode === 'hierarchy' || mode === 'circular') && entryId
         ? computeHierarchyLayout(layoutNodes, this.snapshot.edges, {
             entryNodeId: entryId,
-            layerSpacing: mode === 'circular' ? 300 : 240
+            layerSpacing: mode === 'circular' ? 185 : 165,
+            nodePadding: 68,
+            clusterSeparation: 240
           })
         : await this.layout.layout(layoutNodes, this.snapshot.edges, {
             mode,
             entryNodeId: entryId,
             preservePositions: {}
           })
+
+    for (const folder of this.snapshot.nodes.filter((n) => n.kind === 'folder')) {
+      const children = this.snapshot.nodes.filter(
+        (n) => n.parentId === folder.id && positions[n.id]
+      )
+      if (children.length > 0) {
+        positions[folder.id] = {
+          x: children.reduce((s, c) => s + positions[c.id].x, 0) / children.length,
+          y: children.reduce((s, c) => s + positions[c.id].y, 0) / children.length
+        }
+      }
+    }
 
     this.snapshot = { ...this.snapshot, positions, scannedAt: Date.now() }
     this.onUpdate?.(this.snapshot, true)

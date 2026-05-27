@@ -35,10 +35,10 @@ export function computeHierarchyLayout(
 ): Record<string, LayoutPosition> {
   const {
     entryNodeId,
-    layerSpacing = 340,
+    layerSpacing = 165,
     baseRadius = 0,
-    nodePadding = 88,
-    clusterSeparation = 420
+    nodePadding = 68,
+    clusterSeparation = 240
   } = options
 
   const layoutNodes = nodes.filter((n) => n.kind !== 'folder')

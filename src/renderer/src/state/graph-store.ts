@@ -9,12 +9,14 @@ import { toProjectRelativePath } from '../utils/path-utils'
 
 export type FilterKind = 'all' | 'files' | 'components' | 'imports' | 'folders'
 export type ViewMode = 'code' | 'graph' | 'settings'
+export type CodeViewMode = 'flat' | 'tree'
 
 interface GraphStore {
   snapshot: GraphSnapshot | null
   isLoading: boolean
   error: string | null
   viewMode: ViewMode
+  codeViewMode: CodeViewMode
   searchQuery: string
   focusedNodeId: string | null
   selectedNodeId: string | null
@@ -35,12 +37,14 @@ interface GraphStore {
   activeCodePath: string | null
   userPositions: Record<string, { x: number; y: number }>
   initialCameraDone: boolean
+  expandedFolderIds: Set<string>
 
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
   setSnapshot: (snapshot: GraphSnapshot) => void
   applyIncremental: (update: IncrementalUpdate) => void
   setViewMode: (mode: ViewMode) => void
+  setCodeViewMode: (mode: CodeViewMode) => void
   setSearchQuery: (query: string) => void
   setFocusedNodeId: (id: string | null) => void
   setSelectedNodeId: (id: string | null) => void
@@ -63,6 +67,7 @@ interface GraphStore {
   openFileInCodeView: (nodeId: string) => void
   updateUserPosition: (nodeId: string, position: { x: number; y: number }) => void
   setInitialCameraDone: (done: boolean) => void
+  toggleFolderExpand: (folderId: string) => void
   reset: () => void
 }
 
@@ -73,6 +78,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   isLoading: false,
   error: null,
   viewMode: 'graph',
+  codeViewMode: 'tree',
   searchQuery: '',
   focusedNodeId: null,
   selectedNodeId: null,
@@ -86,13 +92,14 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   hideLowImportance: true,
   secondarySidebarCollapsed: false,
   showMinimap: true,
-  showFolders: false,
+  showFolders: true,
   showLegend: true,
   legendCollapsed: false,
   inspectorOpen: true,
   activeCodePath: null,
   userPositions: {},
   initialCameraDone: false,
+  expandedFolderIds: new Set<string>(),
 
   setLoading: (isLoading) => set({ isLoading }),
   setError: (error) => set({ error }),
@@ -102,6 +109,13 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       ...snapshot,
       nodes: assignLayersToNodes(snapshot.nodes, snapshot.entryNodeId)
     }
+    // Auto-expand top-level src folder if present
+    const srcFolder = withLayers.nodes.find(
+      (n) => n.kind === 'folder' && (n.path === 'src' || n.label === 'src')
+    )
+    const expanded = new Set<string>()
+    if (srcFolder) expanded.add(srcFolder.id)
+
     set({
       snapshot: withLayers,
       isLoading: false,
@@ -109,7 +123,8 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       userPositions: withLayers.positions,
       initialCameraDone: false,
       focusedNodeId: withLayers.entryNodeId,
-      selectedNodeId: withLayers.entryNodeId
+      selectedNodeId: withLayers.entryNodeId,
+      expandedFolderIds: expanded
     })
   },
 
@@ -144,6 +159,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   },
 
   setViewMode: (viewMode) => set({ viewMode }),
+  setCodeViewMode: (codeViewMode) => set({ codeViewMode }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
   setFocusedNodeId: (focusedNodeId) => set({ focusedNodeId }),
   setSelectedNodeId: (selectedNodeId) =>
@@ -189,7 +205,8 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
     const snap = get().snapshot
     if (!snap) return
     const node = snap.nodes.find((n) => n.id === nodeId)
-    if (!node?.path || (node.kind !== 'file' && node.kind !== 'component')) return
+    if (!node?.path) return
+    if (node.kind !== 'file' && node.kind !== 'component' && node.kind !== 'module') return
     const rel = toProjectRelativePath(snap.projectPath, node.path)
     if (!rel) return
     set({
@@ -205,6 +222,13 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       userPositions: { ...s.userPositions, [nodeId]: position }
     })),
   setInitialCameraDone: (initialCameraDone) => set({ initialCameraDone }),
+  toggleFolderExpand: (folderId) =>
+    set((s) => {
+      const next = new Set(s.expandedFolderIds)
+      if (next.has(folderId)) next.delete(folderId)
+      else next.add(folderId)
+      return { expandedFolderIds: next }
+    }),
   reset: () =>
     set({
       snapshot: null,
@@ -217,6 +241,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       activeCodePath: null,
       userPositions: {},
       initialCameraDone: false,
+      expandedFolderIds: new Set(),
       layerVisibility: { ...defaultLayerVisibility },
       isolatedLayer: null,
       focusNeighborhood: false

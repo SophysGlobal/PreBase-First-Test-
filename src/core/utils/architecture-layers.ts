@@ -41,8 +41,21 @@ export const ARCHITECTURE_LAYERS: ArchitectureLayerDef[] = [
 export function classifyNodeLayer(path: string | undefined, isEntry?: boolean): ArchitectureLayerId {
   if (isEntry) return 'entry'
   const p = (path ?? '').toLowerCase().replace(/\\/g, '/')
+  const filename = p.split('/').pop() ?? p
 
   if (/\.(test|spec)\.(tsx?|jsx?)$/.test(p) || /__tests__|\/tests?\//.test(p)) return 'tests'
+
+  // Lock files, git files, env files, metadata → config (hidden by default)
+  if (
+    /^(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|.*\.lock)$/.test(filename) ||
+    /^\.git(ignore|attributes|modules|keep)$/.test(filename) ||
+    /^\.(env|env\..*)$/.test(filename) ||
+    /^(readme|changelog|license|contributing)(\.md)?$/i.test(filename) ||
+    /\/(\.github|\.husky|\.changeset)\//.test(p) ||
+    /\/(dist|build|out|\.next|\.nuxt|\.output)\//i.test(p)
+  )
+    return 'config'
+
   if (/auth|login|session|oauth|passport/.test(p)) return 'auth'
   if (/\/api\/|\/routes\/|\/endpoints\/|\.route\.|\.controller\./.test(p)) return 'api'
   if (/prisma|database|db\/|\/models\/|drizzle|typeorm/.test(p)) return 'database'
@@ -54,7 +67,11 @@ export function classifyNodeLayer(path: string | undefined, isEntry?: boolean): 
   if (/pages\/|app\/|views\/|screens\/|layouts\//.test(p)) return 'ui'
   if (/src\/renderer|src\/ui|styles\/|\.css$|frontend/.test(p)) return 'frontend'
   if (/utils\/|lib\/|helpers\/|shared\/|common\//.test(p)) return 'utils'
-  if (/config|\.config\.|vite\.|webpack|tsconfig|eslint/.test(p)) return 'config'
+  if (
+    /config|\.config\.|vite\.|webpack|tsconfig|eslint|prettier|babel|rollup|jest/.test(p) ||
+    /^(\.|_)/.test(filename)
+  )
+    return 'config'
   if (/hooks\/|store\/|state\//.test(p)) return 'frontend'
 
   return 'other'

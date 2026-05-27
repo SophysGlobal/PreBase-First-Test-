@@ -12,11 +12,13 @@ import {
   nodeIdForPath,
   resolveImportPath
 } from '../utils/paths'
+import type { PathMappings } from '../utils/tsconfig-paths'
 
 export interface GraphGeneratorOptions {
   includeFolders?: boolean
   includeFunctions?: boolean
   maxFunctionNodesPerFile?: number
+  pathMappings?: PathMappings
 }
 
 export class GraphGenerator {
@@ -26,7 +28,8 @@ export class GraphGenerator {
     this.options = {
       includeFolders: options.includeFolders ?? true,
       includeFunctions: options.includeFunctions ?? false,
-      maxFunctionNodesPerFile: options.maxFunctionNodesPerFile ?? 8
+      maxFunctionNodesPerFile: options.maxFunctionNodesPerFile ?? 8,
+      pathMappings: options.pathMappings ?? {}
     }
   }
 
@@ -131,7 +134,12 @@ export class GraphGenerator {
       }
 
       for (const imp of result.imports) {
-        const resolved = resolveImportPath(projectPath, result.relativePath, imp.source)
+        const resolved = resolveImportPath(
+          projectPath,
+          result.relativePath,
+          imp.source,
+          this.options.pathMappings
+        )
         if (!resolved) continue
         const targetId = nodeIdForPath(resolved)
         if (!nodeIds.has(targetId)) {
@@ -162,12 +170,44 @@ export class GraphGenerator {
       }
     }
 
+    this.addFolderDependencyEdges(nodes, edges)
+
     return {
       nodes,
       edges,
       projectPath,
       projectName,
       scannedAt: Date.now()
+    }
+  }
+
+  /** Aggregate file imports into folder-to-folder architecture links. */
+  private addFolderDependencyEdges(nodes: GraphNode[], edges: GraphEdge[]): void {
+    const nodeById = new Map(nodes.map((n) => [n.id, n]))
+    const folderOfFile = (nodeId: string): string | null => {
+      let current = nodeById.get(nodeId)
+      while (current?.parentId) {
+        if (current.parentId.startsWith('folder:')) return current.parentId
+        current = nodeById.get(current.parentId)
+      }
+      return null
+    }
+
+    const seen = new Set<string>()
+    for (const edge of [...edges]) {
+      if (edge.kind !== 'import') continue
+      const sourceFolder = folderOfFile(edge.source)
+      const targetFolder = folderOfFile(edge.target)
+      if (!sourceFolder || !targetFolder || sourceFolder === targetFolder) continue
+      const id = `folder-link:${sourceFolder}->${targetFolder}`
+      if (seen.has(id)) continue
+      seen.add(id)
+      edges.push({
+        id,
+        source: sourceFolder,
+        target: targetFolder,
+        kind: 'dependency'
+      })
     }
   }
 

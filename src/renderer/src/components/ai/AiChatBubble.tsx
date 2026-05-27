@@ -7,7 +7,7 @@ export function AiChatBubble() {
   const [input, setInput] = useState('')
 
   return (
-    <div className="absolute bottom-6 left-6 z-30 flex flex-col items-start gap-2 titlebar-no-drag">
+    <div className="absolute bottom-6 right-6 z-30 flex flex-col items-end gap-2 titlebar-no-drag">
       <AnimatePresence>
         {expanded && (
           <motion.div
@@ -15,7 +15,7 @@ export function AiChatBubble() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.97 }}
             transition={{ type: 'spring', stiffness: 380, damping: 28 }}
-            className="w-[min(340px,calc(100vw-3rem))] rounded-2xl border border-border-subtle bg-surface-overlay/85 backdrop-blur-xl shadow-panel overflow-hidden"
+            className="w-[min(300px,calc(100vw-4rem))] rounded-2xl border border-border-subtle bg-surface-overlay/80 backdrop-blur-xl shadow-panel overflow-hidden"
             style={{
               boxShadow: 'var(--shadow-panel), 0 0 32px rgba(45, 212, 191, 0.08)'
             }}

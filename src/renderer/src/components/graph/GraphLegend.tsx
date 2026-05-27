@@ -1,25 +1,21 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useGraphStore } from '../../state/graph-store'
-import { InfoTooltip } from '../ui/InfoTooltip'
-import { EDGE_TYPE_HELP } from '../../constants/graph-help'
 
 const NODE_ITEMS = [
-  { color: '#f59e0b', label: 'Entry point' },
-  { color: '#a78bfa', label: 'React component' },
-  { color: '#6366f1', label: 'Module / file' },
-  { color: '#34d399', label: 'Service' },
-  { color: '#71717a', label: 'External module' }
+  { color: '#f59e0b', label: 'Entry' },
+  { color: '#a78bfa', label: 'Component' },
+  { color: '#6366f1', label: 'Module' },
+  { color: '#71717a', label: 'Folder' }
 ]
 
 const EDGE_ITEMS = [
-  { color: 'rgba(255,255,255,0.28)', label: 'Static import', dashed: false },
-  { color: 'rgba(99,102,241,0.5)', label: 'Focused / related', dashed: false },
-  { color: 'rgba(168,85,247,0.55)', label: 'Dynamic import', dashed: true },
-  { color: 'rgba(245,158,11,0.9)', label: 'Selected edge', dashed: false }
+  { color: 'rgba(255,255,255,0.26)', label: 'Import', dashed: false },
+  { color: 'rgba(167,139,250,0.45)', label: 'Component use', dashed: false },
+  { color: 'rgba(168,85,247,0.5)', label: 'Dynamic import', dashed: true },
+  { color: 'rgba(113,113,122,0.4)', label: 'Folder link', dashed: true },
+  { color: 'rgba(45,212,191,0.55)', label: 'Focused', dashed: false }
 ]
-
-const EDGES_HELP_BODY = EDGE_TYPE_HELP.map((e) => `${e.label}: ${e.body}`).join(' ')
 
 export function GraphLegend() {
   const showLegend = useGraphStore((s) => s.showLegend)
@@ -32,7 +28,7 @@ export function GraphLegend() {
     <motion.div
       initial={{ opacity: 0, x: -8 }}
       animate={{ opacity: 1, x: 0 }}
-      className="absolute top-4 left-4 z-20 max-w-[220px]"
+      className="absolute top-4 left-4 z-20 max-w-[200px]"
     >
       <div className="rounded-xl border border-border-subtle bg-surface-overlay/75 backdrop-blur-md shadow-panel overflow-hidden">
         <button
@@ -49,35 +45,31 @@ export function GraphLegend() {
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="px-3 pb-3 space-y-2.5"
+              transition={{ duration: 0.18 }}
+              className="px-3 pb-2.5 space-y-2"
             >
-              <motion.div>
-                <p className="text-[9px] uppercase tracking-wider text-text-muted mb-1.5">Nodes</p>
-                <div className="space-y-1">
+              <div>
+                <p className="text-[9px] uppercase tracking-wider text-text-muted mb-1">Nodes</p>
+                <div className="space-y-0.5">
                   {NODE_ITEMS.map((item) => (
-                    <div key={item.label} className="flex items-center gap-2">
+                    <div key={item.label} className="flex items-center gap-1.5">
                       <span
-                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        className="w-2 h-2 rounded-full shrink-0"
                         style={{ backgroundColor: item.color }}
                       />
                       <span className="text-[10px] text-text-secondary">{item.label}</span>
                     </div>
                   ))}
                 </div>
-              </motion.div>
+              </div>
               <div>
-                <p className="text-[9px] uppercase tracking-wider text-text-muted mb-1.5 flex items-center gap-1">
-                  Edges
-                  <InfoTooltip title="Edge types" body={EDGES_HELP_BODY} side="right" />
-                </p>
-                <div className="space-y-1">
+                <p className="text-[9px] uppercase tracking-wider text-text-muted mb-1">Edges</p>
+                <div className="space-y-0.5">
                   {EDGE_ITEMS.map((item) => (
-                    <div key={item.label} className="flex items-center gap-2">
+                    <div key={item.label} className="flex items-center gap-1.5">
                       <span
-                        className="w-6 h-0 shrink-0 block"
+                        className="w-5 h-0 shrink-0"
                         style={{
-                          height: 0,
                           borderTop: item.dashed
                             ? `2px dashed ${item.color}`
                             : `2px solid ${item.color}`
@@ -87,9 +79,6 @@ export function GraphLegend() {
                     </div>
                   ))}
                 </div>
-                <p className="text-[9px] text-text-muted mt-2 leading-relaxed">
-                  Arrows flow importer → imported module
-                </p>
               </div>
             </motion.div>
           )}

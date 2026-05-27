@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import Editor from '@monaco-editor/react'
+import Editor, { useMonaco } from '@monaco-editor/react'
 import type { editor } from 'monaco-editor'
 import { FileCode, Loader2 } from 'lucide-react'
+import { definePrebaseEditorTheme } from '../../monaco/setup'
 import { useGraphStore } from '../../state/graph-store'
 import { useSettingsStore } from '../../state/settings-store'
 
@@ -15,37 +16,6 @@ function languageForPath(path: string): string {
   return 'plaintext'
 }
 
-let monacoThemeDefined = false
-
-function defineMonacoTheme(monaco: typeof import('monaco-editor')) {
-  if (monacoThemeDefined) return
-  monaco.editor.defineTheme('prebase-dark', {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [
-      { token: 'comment', foreground: '6b7280', fontStyle: 'italic' },
-      { token: 'keyword', foreground: 'a78bfa' },
-      { token: 'string', foreground: '86efac' },
-      { token: 'number', foreground: 'fcd34d' },
-      { token: 'type', foreground: '67e8f9' },
-      { token: 'function', foreground: '93c5fd' }
-    ],
-    colors: {
-      'editor.background': '#0d0d0e',
-      'editor.foreground': '#e4e4e7',
-      'editorLineNumber.foreground': '#52525b',
-      'editorLineNumber.activeForeground': '#a1a1aa',
-      'editor.lineHighlightBackground': '#18181b',
-      'editor.selectionBackground': '#6366f133',
-      'editor.inactiveSelectionBackground': '#6366f122',
-      'editorCursor.foreground': '#a5b4fc',
-      'editorIndentGuide.background': '#27272a',
-      'editorIndentGuide.activeBackground': '#3f3f46'
-    }
-  })
-  monacoThemeDefined = true
-}
-
 export function CodeEditorView() {
   const snapshot = useGraphStore((s) => s.snapshot)
   const activeCodePath = useGraphStore((s) => s.activeCodePath)
@@ -53,23 +23,20 @@ export function CodeEditorView() {
   const editorLineNumbers = useSettingsStore((s) => s.editorLineNumbers)
   const editorWordWrap = useSettingsStore((s) => s.editorWordWrap)
 
+  const monaco = useMonaco()
   const [content, setContent] = useState('')
   const [fileLoading, setFileLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [editorHeight, setEditorHeight] = useState(400)
+  const [editorReady, setEditorReady] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
 
   useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const ro = new ResizeObserver(() => {
-      setEditorHeight(Math.max(200, el.clientHeight))
-    })
-    ro.observe(el)
-    setEditorHeight(Math.max(200, el.clientHeight))
-    return () => ro.disconnect()
-  }, [])
+    if (monaco) {
+      definePrebaseEditorTheme(monaco)
+      monaco.editor.setTheme('prebase-dark')
+    }
+  }, [monaco])
 
   useEffect(() => {
     if (!activeCodePath || !snapshot) {
@@ -88,16 +55,16 @@ export function CodeEditorView() {
       .then((text) => {
         if (cancelled) return
         if (text === null) {
-          setError('Could not read file from project')
+          setError(`Could not read "${activeCodePath}" from disk`)
           setContent('')
         } else {
           setContent(text)
           setError(null)
         }
       })
-      .catch(() => {
+      .catch((err) => {
         if (!cancelled) {
-          setError('Failed to load file')
+          setError(err instanceof Error ? err.message : 'Failed to load file')
           setContent('')
         }
       })
@@ -110,12 +77,10 @@ export function CodeEditorView() {
     }
   }, [activeCodePath, snapshot?.projectPath])
 
-  const handleBeforeMount = useCallback((monaco: typeof import('monaco-editor')) => {
-    defineMonacoTheme(monaco)
-  }, [])
-
   const handleMount = useCallback((ed: editor.IStandaloneCodeEditor) => {
     editorRef.current = ed
+    setEditorReady(true)
+    ed.layout()
   }, [])
 
   const monacoOptions = {
@@ -149,40 +114,43 @@ export function CodeEditorView() {
     )
   }
 
-  const showEditor = !fileLoading && !error
-
   return (
     <div className="flex flex-1 flex-col min-h-0 bg-[#0d0d0e]">
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border-subtle bg-surface-raised/80 shrink-0 titlebar-no-drag">
         <FileCode className="w-3.5 h-3.5 text-accent shrink-0" />
         <span className="text-xs font-mono text-text-secondary truncate">{activeCodePath}</span>
-        {fileLoading && <Loader2 className="w-3.5 h-3.5 text-text-muted animate-spin ml-auto" />}
+        {(fileLoading || !editorReady) && (
+          <Loader2 className="w-3.5 h-3.5 text-text-muted animate-spin ml-auto" />
+        )}
       </div>
       <div ref={containerRef} className="flex-1 min-h-0 relative">
         {error && (
-          <div className="absolute inset-0 flex items-center justify-center text-sm text-red-400/90 z-10">
+          <div className="absolute inset-0 flex items-center justify-center text-sm text-red-400/90 z-10 px-6 text-center">
             {error}
           </div>
         )}
-        {fileLoading && (
-          <div className="absolute inset-0 flex items-center justify-center gap-2 text-text-muted text-sm z-10 bg-[#0d0d0e]">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            Loading file…
+        {fileLoading && !error && (
+          <div className="absolute inset-x-0 top-3 z-10 flex justify-center pointer-events-none">
+            <span className="px-3 py-1 rounded-full bg-surface-overlay/90 border border-border-subtle text-[11px] text-text-muted">
+              Loading file…
+            </span>
           </div>
         )}
-        {showEditor && (
-          <Editor
-            key={activeCodePath}
-            height={editorHeight}
-            language={languageForPath(activeCodePath)}
-            value={content}
-            theme="prebase-dark"
-            options={monacoOptions}
-            beforeMount={handleBeforeMount}
-            onMount={handleMount}
-            loading={null}
-          />
-        )}
+        <Editor
+          key={activeCodePath}
+          height="100%"
+          language={languageForPath(activeCodePath)}
+          value={content}
+          theme="prebase-dark"
+          options={monacoOptions}
+          onMount={handleMount}
+          loading={
+            <div className="flex items-center justify-center h-full gap-2 text-text-muted text-sm">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Initializing editor…
+            </div>
+          }
+        />
       </div>
     </div>
   )

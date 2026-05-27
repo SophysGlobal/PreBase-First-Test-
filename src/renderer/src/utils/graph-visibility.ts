@@ -2,6 +2,7 @@ import type { ArchitectureLayerId } from '../../../core/utils/architecture-layer
 import { computeNodeImportance } from '../../../core/utils/architecture-layers'
 import type { GraphNode, GraphSnapshot } from '../../../core/types'
 import { getNodesWithinDepth } from '../../../core/layout/hierarchy-layout'
+import { isNodeHiddenByCollapsedFolders } from './folder-expansion'
 
 export interface VisibilityOptions {
   graphDepth: number
@@ -12,6 +13,7 @@ export interface VisibilityOptions {
   focusedNodeId: string | null
   selectedNodeId: string | null
   showFolders: boolean
+  expandedFolderIds: Set<string>
 }
 
 export function getVisibleNodeIds(
@@ -46,11 +48,24 @@ export function getVisibleNodeIds(
   const threshold = scores[Math.floor(scores.length * 0.35)] ?? 0
 
   for (const node of snapshot.nodes) {
-    if (!options.showFolders && node.kind === 'folder') continue
-    if (depthSet && !depthSet.has(node.id)) continue
+    if (node.kind === 'folder' && !options.showFolders) continue
+
+    if (
+      node.kind !== 'folder' &&
+      isNodeHiddenByCollapsedFolders(node, snapshot, options.expandedFolderIds)
+    ) {
+      continue
+    }
+
+    if (depthSet && node.kind !== 'folder' && !depthSet.has(node.id)) continue
 
     const layer = (node.meta?.architectureLayer as ArchitectureLayerId) ?? 'other'
     if (node.isEntry || node.id === snapshot.entryNodeId) {
+      ids.add(node.id)
+      continue
+    }
+
+    if (node.kind === 'folder') {
       ids.add(node.id)
       continue
     }
@@ -82,7 +97,7 @@ function getNeighborhood(snapshot: GraphSnapshot, nodeId: string, hops: number):
     const next: string[] = []
     for (const id of frontier) {
       for (const e of snapshot.edges) {
-        if (e.kind !== 'import') continue
+        if (e.kind !== 'import' && e.kind !== 'dependency') continue
         const other = e.source === id ? e.target : e.target === id ? e.source : null
         if (other && !set.has(other)) {
           set.add(other)

@@ -2,7 +2,10 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import './styles/globals.css'
+import { setupMonaco } from './monaco/setup'
 import { useTheme } from './hooks/useTheme'
+
+setupMonaco()
 
 function Root() {
   useTheme()
