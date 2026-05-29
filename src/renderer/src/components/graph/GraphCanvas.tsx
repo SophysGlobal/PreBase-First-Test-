@@ -17,6 +17,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ArchitectureNode } from '../nodes/ArchitectureNode'
 import { ArchitectureEdge } from '../edges/ArchitectureEdge'
 import { GraphLegend } from './GraphLegend'
+import { HierarchyLabels } from './HierarchyLabels'
 import { NodeInspector } from '../inspector/NodeInspector'
 import { EdgeInspector } from '../inspector/EdgeInspector'
 import { AiChatBubble } from '../ai/AiChatBubble'
@@ -97,7 +98,7 @@ export function GraphCanvas() {
   const selectedEdgeId = useGraphStore((s) => s.selectedEdgeId)
   const filter = useGraphStore((s) => s.filter)
   const showMinimap = useGraphStore((s) => s.showMinimap)
-  const showFolders = useGraphStore((s) => s.showFolders)
+  const graphOrganizationMode = useGraphStore((s) => s.graphOrganizationMode)
   const graphDepth = useGraphStore((s) => s.graphDepth)
   const layerVisibility = useGraphStore((s) => s.layerVisibility)
   const isolatedLayer = useGraphStore((s) => s.isolatedLayer)
@@ -117,8 +118,23 @@ export function GraphCanvas() {
   )
   const hoveredEdgeIdRef = useRef<string | null>(null)
   const panSensitivity = useSettingsStore((s) => s.panSensitivity)
+  const nodeDragDelayMs = useSettingsStore((s) => s.nodeDragDelayMs)
+  const showEdgeLabels = useSettingsStore((s) => s.showEdgeLabels)
+  const reduceMotion = useSettingsStore((s) => s.reduceMotion)
+  const graphQuality = useSettingsStore((s) => s.graphQuality)
+
+  const [dragReadyNodeId, setDragReadyNodeId] = useState<string | null>(null)
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const dimOnSearch = searchQuery.trim().length > 0
+  const performanceMode = graphQuality === 'performance' || reduceMotion
+
+  const dragEnabledNodeIds = useMemo(() => {
+    const ids = new Set<string>()
+    if (dragReadyNodeId) ids.add(dragReadyNodeId)
+    if (selectedNodeId) ids.add(selectedNodeId)
+    return ids
+  }, [dragReadyNodeId, selectedNodeId])
 
   const flowNodes = useMemo(() => {
     if (!snapshot) return []
@@ -127,7 +143,7 @@ export function GraphCanvas() {
       focusedNodeId,
       selectedNodeId,
       filter,
-      showFolders,
+      graphOrganizationMode,
       graphDepth,
       layerVisibility,
       isolatedLayer,
@@ -135,7 +151,10 @@ export function GraphCanvas() {
       hideLowImportance,
       userPositions,
       dimOnSearch,
-      expandedFolderIds
+      expandedFolderIds,
+      dragEnabledNodeIds,
+      showEdgeLabels,
+      reduceAnimations: performanceMode
     })
   }, [
     snapshot,
@@ -143,7 +162,7 @@ export function GraphCanvas() {
     focusedNodeId,
     selectedNodeId,
     filter,
-    showFolders,
+    graphOrganizationMode,
     graphDepth,
     layerVisibility,
     isolatedLayer,
@@ -151,8 +170,16 @@ export function GraphCanvas() {
     hideLowImportance,
     userPositions,
     dimOnSearch,
-    expandedFolderIds
+    expandedFolderIds,
+    dragEnabledNodeIds,
+    showEdgeLabels,
+    performanceMode
   ])
+
+  const visibleNodeIds = useMemo(
+    () => new Set(flowNodes.map((n) => n.id)),
+    [flowNodes]
+  )
 
   const flowOpts = useMemo(
     () => ({
@@ -160,35 +187,41 @@ export function GraphCanvas() {
       focusedNodeId,
       selectedNodeId,
       filter,
-      showFolders,
+      graphOrganizationMode,
       graphDepth,
       layerVisibility,
       isolatedLayer,
       focusNeighborhood,
       hideLowImportance,
       userPositions,
-      expandedFolderIds
+      expandedFolderIds,
+      dragEnabledNodeIds,
+      showEdgeLabels,
+      reduceAnimations: performanceMode
     }),
     [
       searchQuery,
       focusedNodeId,
       selectedNodeId,
       filter,
-      showFolders,
+      graphOrganizationMode,
       graphDepth,
       layerVisibility,
       isolatedLayer,
       focusNeighborhood,
       hideLowImportance,
       userPositions,
-      expandedFolderIds
+      expandedFolderIds,
+      dragEnabledNodeIds,
+      showEdgeLabels,
+      performanceMode
     ]
   )
 
   const flowEdges = useMemo(() => {
     if (!snapshot) return []
-    return toFlowEdges(snapshot, { ...flowOpts, selectedEdgeId })
-  }, [snapshot, flowOpts, selectedEdgeId])
+    return toFlowEdges(snapshot, { ...flowOpts, selectedEdgeId, visibleNodeIds })
+  }, [snapshot, flowOpts, selectedEdgeId, visibleNodeIds])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges)
@@ -217,7 +250,14 @@ export function GraphCanvas() {
     (_, node) => {
       const kind = (node.data as { kind?: string })?.kind
       if (kind === 'folder') {
-        toggleFolderExpand(node.id)
+        if (selectedNodeId === node.id) {
+          toggleFolderExpand(node.id)
+        } else {
+          setSelectedNodeId(node.id)
+          setFocusedNodeId(node.id)
+          setSelectedEdgeId(null)
+          setInspectorOpen(true)
+        }
         return
       }
       setSelectedNodeId(node.id)
@@ -226,6 +266,7 @@ export function GraphCanvas() {
       setInspectorOpen(true)
     },
     [
+      selectedNodeId,
       toggleFolderExpand,
       setSelectedNodeId,
       setFocusedNodeId,
@@ -266,7 +307,32 @@ export function GraphCanvas() {
   const onPaneClick = useCallback(() => {
     setSelectedEdgeId(null)
     setContextMenu(null)
+    setDragReadyNodeId(null)
   }, [setSelectedEdgeId])
+
+  const clearHoverTimer = useCallback(() => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current)
+      hoverTimerRef.current = null
+    }
+  }, [])
+
+  const onNodeMouseEnter: NodeMouseHandler = useCallback(
+    (_, node) => {
+      clearHoverTimer()
+      hoverTimerRef.current = setTimeout(() => {
+        setDragReadyNodeId(node.id)
+      }, nodeDragDelayMs)
+    },
+    [clearHoverTimer, nodeDragDelayMs]
+  )
+
+  const onNodeMouseLeave: NodeMouseHandler = useCallback(() => {
+    clearHoverTimer()
+    setDragReadyNodeId(null)
+  }, [clearHoverTimer])
+
+  useEffect(() => () => clearHoverTimer(), [clearHoverTimer])
 
   if (!snapshot) return null
 
@@ -278,6 +344,8 @@ export function GraphCanvas() {
         onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
+        onNodeMouseEnter={onNodeMouseEnter}
+        onNodeMouseLeave={onNodeMouseLeave}
         onNodeContextMenu={onNodeContextMenu}
         onEdgeClick={onEdgeClick}
         onEdgeMouseEnter={onEdgeMouseEnter}
@@ -294,6 +362,7 @@ export function GraphCanvas() {
         panOnDrag
         selectionOnDrag={false}
         nodesDraggable
+        nodeDragThreshold={3}
         elementsSelectable
         edgesFocusable={false}
         autoPanOnNodeDrag={false}
@@ -328,6 +397,7 @@ export function GraphCanvas() {
       </ReactFlow>
 
       <GraphLegend />
+      <HierarchyLabels />
 
       <NodeInspector />
       <EdgeInspector />

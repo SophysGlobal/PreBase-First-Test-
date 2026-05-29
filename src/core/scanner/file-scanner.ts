@@ -60,7 +60,7 @@ export class FileScanner {
       .sort((a, b) => a.localeCompare(b))
   }
 
-  detectProjectType(projectRoot: string, files: ScannedFile[]): string {
+  detectProjectType(_projectRoot: string, files: ScannedFile[]): string {
     const names = new Set(files.map((f) => basename(f.relativePath)))
     if (names.has('package.json')) {
       const hasReact = files.some(
@@ -68,6 +68,17 @@ export class FileScanner {
       )
       return hasReact ? 'react' : 'javascript'
     }
+    if (names.has('pom.xml') || names.has('build.gradle') || names.has('build.gradle.kts')) {
+      return 'java'
+    }
+    if (names.has('go.mod')) return 'go'
+    if (names.has('Cargo.toml')) return 'rust'
+    if (names.has('pyproject.toml') || names.has('requirements.txt')) return 'python'
+    if (names.has('composer.json')) return 'php'
+    if (files.some((f) => f.extension === '.java' || f.extension === '.kt')) return 'java'
+    if (files.some((f) => f.extension === '.py')) return 'python'
+    if (files.some((f) => f.extension === '.go')) return 'go'
+    if (files.some((f) => f.extension === '.rs')) return 'rust'
     if (files.some((f) => f.extension === '.ts' || f.extension === '.tsx')) {
       return 'typescript'
     }

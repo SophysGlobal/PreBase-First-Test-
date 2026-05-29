@@ -5,16 +5,7 @@ import { FileCode, Loader2 } from 'lucide-react'
 import { definePrebaseEditorTheme } from '../../monaco/setup'
 import { useGraphStore } from '../../state/graph-store'
 import { useSettingsStore } from '../../state/settings-store'
-
-function languageForPath(path: string): string {
-  if (path.endsWith('.tsx')) return 'typescript'
-  if (path.endsWith('.ts') || path.endsWith('.mts') || path.endsWith('.cts')) return 'typescript'
-  if (path.endsWith('.jsx')) return 'javascript'
-  if (path.endsWith('.js') || path.endsWith('.mjs') || path.endsWith('.cjs')) return 'javascript'
-  if (path.endsWith('.json')) return 'json'
-  if (path.endsWith('.css')) return 'css'
-  return 'plaintext'
-}
+import { monacoLanguageForPath } from '../../utils/language'
 
 export function CodeEditorView() {
   const snapshot = useGraphStore((s) => s.snapshot)
@@ -22,6 +13,7 @@ export function CodeEditorView() {
   const editorFontSize = useSettingsStore((s) => s.editorFontSize)
   const editorLineNumbers = useSettingsStore((s) => s.editorLineNumbers)
   const editorWordWrap = useSettingsStore((s) => s.editorWordWrap)
+  const editorMinimap = useSettingsStore((s) => s.editorMinimap)
 
   const monaco = useMonaco()
   const [content, setContent] = useState('')
@@ -85,7 +77,7 @@ export function CodeEditorView() {
 
   const monacoOptions = {
     readOnly: true,
-    minimap: { enabled: false },
+    minimap: { enabled: editorMinimap },
     fontSize: editorFontSize,
     lineHeight: Math.round(editorFontSize * 1.45),
     fontFamily: "'JetBrains Mono', 'SF Mono', Menlo, Monaco, monospace",
@@ -139,7 +131,7 @@ export function CodeEditorView() {
         <Editor
           key={activeCodePath}
           height="100%"
-          language={languageForPath(activeCodePath)}
+          language={monacoLanguageForPath(activeCodePath)}
           value={content}
           theme="prebase-dark"
           options={monacoOptions}

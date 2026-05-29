@@ -6,7 +6,6 @@ import { LayoutEngine } from '../layout/layout-engine'
 import { WatcherEngine, type WatcherEvent } from '../watcher/watcher-engine'
 import { assignLayersToNodes } from '../utils/architecture-layers'
 import { detectEntryNodeId, readPackageMain } from '../utils/entry-detector'
-import { computeHierarchyLayout } from '../layout/hierarchy-layout'
 import { loadTsconfigPaths, type PathMappings } from '../utils/tsconfig-paths'
 import type { GraphSnapshot, IncrementalUpdate, LayoutMode, ScannedFile } from '../types'
 
@@ -109,19 +108,11 @@ export class ProjectService {
 
     const layoutNodes = this.snapshot.nodes.filter((n) => n.kind !== 'folder')
     const entryId = this.snapshot.entryNodeId
-    const positions =
-      (mode === 'hierarchy' || mode === 'circular') && entryId
-        ? computeHierarchyLayout(layoutNodes, this.snapshot.edges, {
-            entryNodeId: entryId,
-            layerSpacing: mode === 'circular' ? 185 : 165,
-            nodePadding: 68,
-            clusterSeparation: 240
-          })
-        : await this.layout.layout(layoutNodes, this.snapshot.edges, {
-            mode,
-            entryNodeId: entryId,
-            preservePositions: {}
-          })
+    const positions = await this.layout.layout(layoutNodes, this.snapshot.edges, {
+      mode,
+      entryNodeId: entryId,
+      preservePositions: {}
+    })
 
     for (const folder of this.snapshot.nodes.filter((n) => n.kind === 'folder')) {
       const children = this.snapshot.nodes.filter(

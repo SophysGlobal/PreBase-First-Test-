@@ -5,6 +5,10 @@ import traverseModule from '@babel/traverse'
 const traverse = (traverseModule as unknown as { default?: typeof traverseModule }).default ?? traverseModule
 import * as t from '@babel/types'
 import type { ParseResult, ScannedFile } from '../types'
+import {
+  extractImportsForFile,
+  isBabelParsableExtension
+} from './import-extractors'
 
 const PARSER_PLUGINS: ParserOptions['plugins'] = [
   'typescript',
@@ -26,6 +30,10 @@ export class ParserEngine {
     }
 
     if (content.length > 500_000) return null
+
+    if (!isBabelParsableExtension(file.extension)) {
+      return this.parseWithImportExtractor(file, content)
+    }
 
     let ast: t.File
     try {
@@ -176,14 +184,13 @@ export class ParserEngine {
     return false
   }
 
-  private fallbackRegexParse(file: ScannedFile, content: string): ParseResult {
-    const imports: ParseResult['imports'] = []
-    const importRe =
-      /import\s+(?:(?:\{[^}]*\}|\*\s+as\s+\w+|\w+)(?:\s*,\s*(?:\{[^}]*\}|\w+))*\s+from\s+)?['"]([^'"]+)['"]/g
-    let m: RegExpExecArray | null
-    while ((m = importRe.exec(content)) !== null) {
-      imports.push({ source: m[1], specifiers: [] })
-    }
+  private parseWithImportExtractor(file: ScannedFile, content: string): ParseResult {
+    const imports = extractImportsForFile(file, content)
+    const isComponent =
+      file.extension === '.tsx' ||
+      file.extension === '.jsx' ||
+      file.extension === '.vue' ||
+      file.extension === '.svelte'
 
     return {
       filePath: file.absolutePath,
@@ -192,7 +199,11 @@ export class ParserEngine {
       exports: [],
       functions: [],
       components: [],
-      isComponentFile: file.extension === '.tsx' || file.extension === '.jsx'
+      isComponentFile: isComponent
     }
+  }
+
+  private fallbackRegexParse(file: ScannedFile, content: string): ParseResult {
+    return this.parseWithImportExtractor(file, content)
   }
 }

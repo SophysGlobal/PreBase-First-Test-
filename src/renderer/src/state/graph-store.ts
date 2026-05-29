@@ -10,6 +10,7 @@ import { toProjectRelativePath } from '../utils/path-utils'
 export type FilterKind = 'all' | 'files' | 'components' | 'imports' | 'folders'
 export type ViewMode = 'code' | 'graph' | 'settings'
 export type CodeViewMode = 'flat' | 'tree'
+export type GraphOrganizationMode = 'dependencies' | 'tree'
 
 interface GraphStore {
   snapshot: GraphSnapshot | null
@@ -17,6 +18,7 @@ interface GraphStore {
   error: string | null
   viewMode: ViewMode
   codeViewMode: CodeViewMode
+  graphOrganizationMode: GraphOrganizationMode
   searchQuery: string
   focusedNodeId: string | null
   selectedNodeId: string | null
@@ -30,7 +32,6 @@ interface GraphStore {
   hideLowImportance: boolean
   secondarySidebarCollapsed: boolean
   showMinimap: boolean
-  showFolders: boolean
   showLegend: boolean
   legendCollapsed: boolean
   inspectorOpen: boolean
@@ -45,6 +46,7 @@ interface GraphStore {
   applyIncremental: (update: IncrementalUpdate) => void
   setViewMode: (mode: ViewMode) => void
   setCodeViewMode: (mode: CodeViewMode) => void
+  setGraphOrganizationMode: (mode: GraphOrganizationMode) => void
   setSearchQuery: (query: string) => void
   setFocusedNodeId: (id: string | null) => void
   setSelectedNodeId: (id: string | null) => void
@@ -59,7 +61,6 @@ interface GraphStore {
   setHideLowImportance: (on: boolean) => void
   toggleSecondarySidebar: () => void
   setShowMinimap: (show: boolean) => void
-  setShowFolders: (show: boolean) => void
   setShowLegend: (show: boolean) => void
   setLegendCollapsed: (collapsed: boolean) => void
   setInspectorOpen: (open: boolean) => void
@@ -73,12 +74,19 @@ interface GraphStore {
 
 const defaultLayerVisibility = buildDefaultLayerVisibility()
 
+const VALID_LAYOUTS: LayoutMode[] = ['hierarchy', 'pyramid', 'scattered']
+
+function sanitizeLayoutMode(mode: LayoutMode): LayoutMode {
+  return VALID_LAYOUTS.includes(mode) ? mode : 'hierarchy'
+}
+
 export const useGraphStore = create<GraphStore>((set, get) => ({
   snapshot: null,
   isLoading: false,
   error: null,
   viewMode: 'graph',
   codeViewMode: 'tree',
+  graphOrganizationMode: 'dependencies',
   searchQuery: '',
   focusedNodeId: null,
   selectedNodeId: null,
@@ -92,7 +100,6 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   hideLowImportance: true,
   secondarySidebarCollapsed: false,
   showMinimap: true,
-  showFolders: true,
   showLegend: true,
   legendCollapsed: false,
   inspectorOpen: true,
@@ -109,12 +116,6 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       ...snapshot,
       nodes: assignLayersToNodes(snapshot.nodes, snapshot.entryNodeId)
     }
-    // Auto-expand top-level src folder if present
-    const srcFolder = withLayers.nodes.find(
-      (n) => n.kind === 'folder' && (n.path === 'src' || n.label === 'src')
-    )
-    const expanded = new Set<string>()
-    if (srcFolder) expanded.add(srcFolder.id)
 
     set({
       snapshot: withLayers,
@@ -124,7 +125,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       initialCameraDone: false,
       focusedNodeId: withLayers.entryNodeId,
       selectedNodeId: withLayers.entryNodeId,
-      expandedFolderIds: expanded
+      expandedFolderIds: new Set<string>()
     })
   },
 
@@ -160,6 +161,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
 
   setViewMode: (viewMode) => set({ viewMode }),
   setCodeViewMode: (codeViewMode) => set({ codeViewMode }),
+  setGraphOrganizationMode: (graphOrganizationMode) => set({ graphOrganizationMode }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
   setFocusedNodeId: (focusedNodeId) => set({ focusedNodeId }),
   setSelectedNodeId: (selectedNodeId) =>
@@ -171,7 +173,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   setSelectedEdgeId: (selectedEdgeId) =>
     set({ selectedEdgeId, selectedNodeId: null, inspectorOpen: true }),
   setFilter: (filter) => set({ filter }),
-  setLayoutMode: (layoutMode) => set({ layoutMode }),
+  setLayoutMode: (layoutMode) => set({ layoutMode: sanitizeLayoutMode(layoutMode) }),
   setGraphDepth: (graphDepth) => set({ graphDepth }),
   setLayerVisible: (layer, visible) =>
     set((s) => ({
@@ -196,7 +198,6 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   toggleSecondarySidebar: () =>
     set((s) => ({ secondarySidebarCollapsed: !s.secondarySidebarCollapsed })),
   setShowMinimap: (showMinimap) => set({ showMinimap }),
-  setShowFolders: (showFolders) => set({ showFolders }),
   setShowLegend: (showLegend) => set({ showLegend }),
   setLegendCollapsed: (legendCollapsed) => set({ legendCollapsed }),
   setInspectorOpen: (inspectorOpen) => set({ inspectorOpen }),
@@ -242,8 +243,13 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       userPositions: {},
       initialCameraDone: false,
       expandedFolderIds: new Set(),
+      graphOrganizationMode: 'dependencies',
       layerVisibility: { ...defaultLayerVisibility },
       isolatedLayer: null,
       focusNeighborhood: false
     })
 }))
+
+export function isTreeGraphMode(mode: GraphOrganizationMode): boolean {
+  return mode === 'tree'
+}

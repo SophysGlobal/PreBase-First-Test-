@@ -3,6 +3,7 @@ import {
   ChevronRight,
   FileCode,
   GitBranch,
+  GitFork,
   Layers,
   LayoutGrid,
   Map,
@@ -11,17 +12,27 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import type { LayoutMode } from '../../../../core/types'
-import { useGraphStore, type FilterKind } from '../../state/graph-store'
+import { useGraphStore, type FilterKind, type GraphOrganizationMode } from '../../state/graph-store'
 import { GraphLayersPanel } from './GraphLayersPanel'
 import { InfoTooltip } from '../ui/InfoTooltip'
 import { CollapsibleSidebar } from '../layout/CollapsibleSidebar'
-import { DEPTH_HELP, LAYOUT_MODE_HELP, LAYOUT_PRESETS } from '../../constants/graph-help'
+import {
+  DEPTH_HELP,
+  GRAPH_ORG_MODE_HELP,
+  LAYOUT_MODE_HELP,
+  LAYOUT_PRESETS
+} from '../../constants/graph-help'
 
 const filters: { id: FilterKind; label: string; icon: typeof FileCode }[] = [
   { id: 'all', label: 'All', icon: LayoutGrid },
   { id: 'files', label: 'Files', icon: FileCode },
   { id: 'components', label: 'Components', icon: Layers },
   { id: 'imports', label: 'Dependencies', icon: GitBranch }
+]
+
+const orgModes: { id: GraphOrganizationMode; label: string; icon: typeof GitFork }[] = [
+  { id: 'dependencies', label: 'Dependencies', icon: GitBranch },
+  { id: 'tree', label: 'Tree', icon: GitFork }
 ]
 
 interface GraphSidebarProps {
@@ -41,8 +52,8 @@ export function GraphSidebar({ onRelayout }: GraphSidebarProps) {
   const setShowLegend = useGraphStore((s) => s.setShowLegend)
   const showMinimap = useGraphStore((s) => s.showMinimap)
   const setShowMinimap = useGraphStore((s) => s.setShowMinimap)
-  const showFolders = useGraphStore((s) => s.showFolders)
-  const setShowFolders = useGraphStore((s) => s.setShowFolders)
+  const graphOrganizationMode = useGraphStore((s) => s.graphOrganizationMode)
+  const setGraphOrganizationMode = useGraphStore((s) => s.setGraphOrganizationMode)
   const layoutModeValue = useGraphStore((s) => s.layoutMode)
   const setLayoutMode = useGraphStore((s) => s.setLayoutMode)
 
@@ -65,6 +76,34 @@ export function GraphSidebar({ onRelayout }: GraphSidebarProps) {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-md bg-surface-overlay border border-border-subtle text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/40"
           />
+        </div>
+
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1 px-0.5 flex items-center gap-1">
+            Organization
+            <InfoTooltip
+              title={GRAPH_ORG_MODE_HELP.dependencies.title}
+              body={`${GRAPH_ORG_MODE_HELP.dependencies.body} ${GRAPH_ORG_MODE_HELP.tree.body}`}
+              side="bottom"
+            />
+          </p>
+          <div className="flex gap-0.5 p-0.5 bg-surface-overlay rounded-lg border border-border-subtle">
+            {orgModes.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setGraphOrganizationMode(id)}
+                className={`flex-1 flex items-center justify-center gap-1 py-1 rounded-md text-[10px] font-medium transition-colors ${
+                  graphOrganizationMode === id
+                    ? 'bg-surface-muted text-text-primary shadow-sm'
+                    : 'text-text-muted hover:text-text-secondary'
+                }`}
+              >
+                <Icon className="w-3 h-3" />
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div>
@@ -175,15 +214,6 @@ export function GraphSidebar({ onRelayout }: GraphSidebarProps) {
               type="checkbox"
               checked={showMinimap}
               onChange={(e) => setShowMinimap(e.target.checked)}
-              className="accent-teal-400"
-            />
-          </label>
-          <label className="flex items-center justify-between text-[11px] text-text-secondary cursor-pointer py-0.5">
-            <span>Folder nodes</span>
-            <input
-              type="checkbox"
-              checked={showFolders}
-              onChange={(e) => setShowFolders(e.target.checked)}
               className="accent-teal-400"
             />
           </label>

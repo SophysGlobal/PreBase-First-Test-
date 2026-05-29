@@ -67,7 +67,7 @@ export class GraphGenerator {
     }
 
     if (this.options.includeFolders) {
-      ensureFolder('')
+      // Folders are created only as ancestors of scanned files — no synthetic root.
     }
 
     for (const result of results) {
@@ -170,6 +170,10 @@ export class GraphGenerator {
       }
     }
 
+    if (this.options.includeFolders) {
+      this.pruneEmptyFolders(nodes, edges)
+    }
+
     this.addFolderDependencyEdges(nodes, edges)
 
     return {
@@ -178,6 +182,48 @@ export class GraphGenerator {
       projectPath,
       projectName,
       scannedAt: Date.now()
+    }
+  }
+
+  /** Remove folders with no files or nested folders containing files. */
+  private pruneEmptyFolders(nodes: GraphNode[], edges: GraphEdge[]): void {
+    const folderHasContent = (folderId: string): boolean => {
+      for (const n of nodes) {
+        if (n.parentId !== folderId) continue
+        if (n.kind !== 'folder') return true
+        if (folderHasContent(n.id)) return true
+      }
+      return false
+    }
+
+    let changed = true
+    while (changed) {
+      changed = false
+      for (let i = nodes.length - 1; i >= 0; i--) {
+        const n = nodes[i]
+        if (n.kind !== 'folder') continue
+        if (!folderHasContent(n.id)) {
+          nodes.splice(i, 1)
+          changed = true
+        }
+      }
+    }
+
+    const validIds = new Set(nodes.map((n) => n.id))
+    for (let i = edges.length - 1; i >= 0; i--) {
+      if (!validIds.has(edges[i].source) || !validIds.has(edges[i].target)) {
+        edges.splice(i, 1)
+      }
+    }
+
+    for (const n of nodes) {
+      if (!n.parentId || validIds.has(n.parentId)) continue
+      let p: string | undefined = n.parentId
+      while (p && !validIds.has(p)) {
+        const parent = nodes.find((x) => x.id === p)
+        p = parent?.parentId
+      }
+      n.parentId = p && validIds.has(p) ? p : undefined
     }
   }
 

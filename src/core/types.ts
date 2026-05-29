@@ -89,11 +89,4 @@ export interface ScannedFile {
   extension: string
 }
 
-export type LayoutMode =
-  | 'hierarchy'
-  | 'pyramid'
-  | 'circular'
-  | 'clustered'
-  | 'scattered'
-  | 'force'
-  | 'grid'
+export type LayoutMode = 'hierarchy' | 'pyramid' | 'scattered'

@@ -3,6 +3,8 @@ import { computeNodeImportance } from '../../../core/utils/architecture-layers'
 import type { GraphNode, GraphSnapshot } from '../../../core/types'
 import { getNodesWithinDepth } from '../../../core/layout/hierarchy-layout'
 import { isNodeHiddenByCollapsedFolders } from './folder-expansion'
+import type { GraphOrganizationMode } from '../state/graph-store'
+import { isTreeGraphMode } from '../state/graph-store'
 
 export interface VisibilityOptions {
   graphDepth: number
@@ -12,7 +14,7 @@ export interface VisibilityOptions {
   hideLowImportance: boolean
   focusedNodeId: string | null
   selectedNodeId: string | null
-  showFolders: boolean
+  graphOrganizationMode: GraphOrganizationMode
   expandedFolderIds: Set<string>
 }
 
@@ -20,6 +22,7 @@ export function getVisibleNodeIds(
   snapshot: GraphSnapshot,
   options: VisibilityOptions
 ): Set<string> {
+  const treeMode = isTreeGraphMode(options.graphOrganizationMode)
   const ids = new Set<string>()
 
   let depthSet: Set<string> | null = null
@@ -48,11 +51,16 @@ export function getVisibleNodeIds(
   const threshold = scores[Math.floor(scores.length * 0.35)] ?? 0
 
   for (const node of snapshot.nodes) {
-    if (node.kind === 'folder' && !options.showFolders) continue
+    if (node.kind === 'folder' && !treeMode) continue
 
     if (
       node.kind !== 'folder' &&
-      isNodeHiddenByCollapsedFolders(node, snapshot, options.expandedFolderIds)
+      isNodeHiddenByCollapsedFolders(
+        node,
+        snapshot,
+        options.expandedFolderIds,
+        treeMode
+      )
     ) {
       continue
     }

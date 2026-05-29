@@ -1,248 +1,225 @@
-import type { ArchitectureLayerId } from '../utils/architecture-layers'
 import type { GraphEdge, GraphNode, LayoutPosition } from '../types'
+import {
+  chunkArray,
+  computeDependencyDepths,
+  labelForDepth,
+  type DependencyDepthResult
+} from './dependency-depth'
 
 export interface HierarchyLayoutOptions {
   entryNodeId: string
-  layerSpacing?: number
-  baseRadius?: number
-  nodePadding?: number
-  clusterSeparation?: number
+  maxNodesPerRing?: number
+  layerGap?: number
+  subRingGap?: number
+  centerClearance?: number
+  maxRadius?: number
+  nodeWidth?: number
+  nodeGap?: number
 }
 
-const LAYER_SECTOR_ORDER: ArchitectureLayerId[] = [
-  'entry',
-  'frontend',
-  'ui',
-  'components',
-  'api',
-  'auth',
-  'services',
-  'backend',
-  'database',
-  'utils',
-  'config',
-  'other',
-  'tests'
-]
+export interface HierarchyRingLabel {
+  depth: number
+  label: string
+  radius: number
+  x: number
+  y: number
+}
 
-/**
- * Radial hierarchy with cluster-aware sector spacing and strong collision resolution.
- */
+const NODE_W = 168
+const NODE_GAP = 28
+
+const DEFAULTS = {
+  maxNodesPerRing: 10,
+  layerGap: 132,
+  subRingGap: 44,
+  centerClearance: 108,
+  maxRadius: 520,
+  nodeWidth: NODE_W,
+  nodeGap: NODE_GAP
+}
+
+/** Minimum ring radius so `count` nodes do not overlap on the circle. */
+function minRadiusForCount(count: number, nodeWidth: number, gap: number): number {
+  if (count <= 1) return 0
+  const chord = nodeWidth + gap
+  return (count * chord) / (2 * Math.PI)
+}
+
+function placeOnRing(
+  ids: string[],
+  radius: number,
+  positions: Record<string, LayoutPosition>
+): void {
+  if (ids.length === 0) return
+  if (ids.length === 1) {
+    positions[ids[0]] = { x: 0, y: -radius }
+    return
+  }
+  ids.forEach((id, i) => {
+    const angle = (2 * Math.PI * i) / ids.length - Math.PI / 2
+    positions[id] = {
+      x: Math.cos(angle) * radius,
+      y: Math.sin(angle) * radius
+    }
+  })
+}
+
+function depthBaseRadius(depth: number, cfg: typeof DEFAULTS): number {
+  if (depth <= 0) return 0
+  return cfg.centerClearance + (depth - 1) * cfg.layerGap
+}
+
 export function computeHierarchyLayout(
   nodes: GraphNode[],
   edges: GraphEdge[],
   options: HierarchyLayoutOptions
 ): Record<string, LayoutPosition> {
-  const {
-    entryNodeId,
-    layerSpacing = 165,
-    baseRadius = 0,
-    nodePadding = 68,
-    clusterSeparation = 240
-  } = options
-
-  const layoutNodes = nodes.filter((n) => n.kind !== 'folder')
-  const nodeIds = new Set(layoutNodes.map((n) => n.id))
-  const importEdges = edges.filter(
-    (e) => e.kind === 'import' && nodeIds.has(e.source) && nodeIds.has(e.target)
-  )
-
-  const outbound = new Map<string, string[]>()
-  const inbound = new Map<string, string[]>()
-  for (const e of importEdges) {
-    if (!outbound.has(e.source)) outbound.set(e.source, [])
-    outbound.get(e.source)!.push(e.target)
-    if (!inbound.has(e.target)) inbound.set(e.target, [])
-    inbound.get(e.target)!.push(e.source)
-  }
-
-  const depth = new Map<string, number>()
-  const queue: string[] = []
-
-  if (nodeIds.has(entryNodeId)) {
-    depth.set(entryNodeId, 0)
-    queue.push(entryNodeId)
-  }
-
-  while (queue.length > 0) {
-    const current = queue.shift()!
-    const d = depth.get(current)!
-    for (const next of outbound.get(current) ?? []) {
-      if (!depth.has(next)) {
-        depth.set(next, d + 1)
-        queue.push(next)
-      }
-    }
-  }
-
-  const maxBfsDepth = Math.max(0, ...depth.values())
-  for (const node of layoutNodes) {
-    if (!depth.has(node.id)) {
-      depth.set(node.id, maxBfsDepth + 1 + Math.min(inbound.get(node.id)?.length ?? 0, 2))
-    }
-  }
-
-  const layers = new Map<number, string[]>()
-  for (const node of layoutNodes) {
-    const d = depth.get(node.id) ?? 1
-    if (!layers.has(d)) layers.set(d, [])
-    layers.get(d)!.push(node.id)
-  }
-
+  const cfg = { ...DEFAULTS, ...options }
+  const { layers, entryNodeId } = computeDependencyDepths(nodes, edges, options.entryNodeId)
   const positions: Record<string, LayoutPosition> = {}
-  const nodeById = new Map(layoutNodes.map((n) => [n.id, n]))
 
-  for (const [layer, ids] of layers) {
-    if (layer === 0) {
+  for (const [depth, ids] of [...layers.entries()].sort((a, b) => a[0] - b[0])) {
+    if (depth === 0) {
       positions[entryNodeId] = { x: 0, y: 0 }
       continue
     }
 
-    const radius = baseRadius + layer * layerSpacing
-    const byArchLayer = new Map<ArchitectureLayerId, string[]>()
+    const rings = chunkArray(ids, cfg.maxNodesPerRing)
+    const base = depthBaseRadius(depth, cfg)
 
-    for (const id of ids) {
-      const arch =
-        (nodeById.get(id)?.meta?.architectureLayer as ArchitectureLayerId | undefined) ?? 'other'
-      if (!byArchLayer.has(arch)) byArchLayer.set(arch, [])
-      byArchLayer.get(arch)!.push(id)
+    rings.forEach((ringIds, ringIndex) => {
+      const minR = minRadiusForCount(ringIds.length, cfg.nodeWidth, cfg.nodeGap)
+      const radius = Math.min(
+        cfg.maxRadius,
+        Math.max(base + ringIndex * cfg.subRingGap, minR + base * 0.15)
+      )
+      placeOnRing(ringIds, radius, positions)
+    })
+  }
+
+  centerGraph(positions)
+  return positions
+}
+
+export function computePyramidLayout(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  options: HierarchyLayoutOptions
+): Record<string, LayoutPosition> {
+  const maxNodesPerRow = options.maxNodesPerRing ?? DEFAULTS.maxNodesPerRing
+  const colWidth = 192
+  const rowHeight = 88
+  const tierGap = 96
+  const boxW = 176
+  const boxH = 60
+
+  const { layers, entryNodeId } = computeDependencyDepths(nodes, edges, options.entryNodeId)
+  const positions: Record<string, LayoutPosition> = {}
+
+  for (const [depth, ids] of [...layers.entries()].sort((a, b) => a[0] - b[0])) {
+    if (depth === 0) {
+      positions[entryNodeId] = { x: 0, y: 0 }
+      continue
     }
 
-    const archKeys = [...byArchLayer.keys()].sort(
-      (a, b) => LAYER_SECTOR_ORDER.indexOf(a) - LAYER_SECTOR_ORDER.indexOf(b)
-    )
-    const sectorCount = Math.max(archKeys.length, 1)
-    const sectorWidth = (2 * Math.PI) / sectorCount
+    const rows = chunkArray(ids, maxNodesPerRow)
+    rows.forEach((rowIds, rowIndex) => {
+      const y = depth * tierGap + rowIndex * rowHeight
+      const span = Math.max(0, (rowIds.length - 1) * colWidth)
+      rowIds.forEach((id, i) => {
+        positions[id] = { x: -span / 2 + i * colWidth, y }
+      })
+    })
+  }
 
-    archKeys.forEach((archId, sectorIndex) => {
-      const sectorIds = byArchLayer.get(archId)!
-      const sectorStart = -Math.PI / 2 + sectorIndex * sectorWidth
-      const angleStep = sectorIds.length > 0 ? sectorWidth / (sectorIds.length + 1) : sectorWidth
+  resolveRectCollisions(positions, boxW, boxH, 12)
+  centerGraph(positions)
+  return positions
+}
 
-      sectorIds.forEach((id, i) => {
-        const angle = sectorStart + angleStep * (i + 1)
-        const jitter = layer % 2 === 0 ? 0.04 * i : -0.04 * i
+export function computeScatterLayout(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  options: HierarchyLayoutOptions
+): Record<string, LayoutPosition> {
+  const cfg = {
+    maxNodesPerRing: 8,
+    layerGap: 100,
+    subRingGap: 32,
+    centerClearance: 92,
+    maxRadius: 400,
+    nodeWidth: NODE_W,
+    nodeGap: 24,
+    ...options
+  }
+  const { layers, entryNodeId } = computeDependencyDepths(nodes, edges, options.entryNodeId)
+  const positions: Record<string, LayoutPosition> = {}
+
+  for (const [depth, ids] of [...layers.entries()].sort((a, b) => a[0] - b[0])) {
+    if (depth === 0) {
+      positions[entryNodeId] = { x: 0, y: 0 }
+      continue
+    }
+
+    const rings = chunkArray(ids, cfg.maxNodesPerRing)
+    const base = depthBaseRadius(depth, cfg)
+
+    rings.forEach((ringIds, ringIndex) => {
+      const minR = minRadiusForCount(ringIds.length, cfg.nodeWidth, cfg.nodeGap)
+      const radius = Math.min(
+        cfg.maxRadius,
+        Math.max(base + ringIndex * cfg.subRingGap, minR + base * 0.12)
+      )
+      ringIds.forEach((id, i) => {
+        const baseAngle = (2 * Math.PI * i) / ringIds.length - Math.PI / 2
+        const jitter = ((i * 5 + depth * 2) % 7) * 0.012
+        const angle = baseAngle + jitter
         positions[id] = {
-          x: Math.cos(angle + jitter) * radius,
-          y: Math.sin(angle + jitter) * radius
+          x: Math.cos(angle) * radius,
+          y: Math.sin(angle) * radius
         }
       })
     })
   }
 
-  resolveCollisions(positions, layoutNodes, nodePadding, 12)
-  separateArchitectureClusters(positions, layoutNodes, clusterSeparation)
-  resolveCollisions(positions, layoutNodes, nodePadding * 0.85, 6)
   centerGraph(positions)
-
   return positions
 }
 
-function separateArchitectureClusters(
-  positions: Record<string, LayoutPosition>,
+export function getHierarchyRingLabels(
   nodes: GraphNode[],
-  minClusterDist: number
-): void {
-  const clusters = new Map<ArchitectureLayerId, { ids: string[]; cx: number; cy: number }>()
+  edges: GraphEdge[],
+  entryNodeId: string
+): HierarchyRingLabel[] {
+  const { layers } = computeDependencyDepths(nodes, edges, entryNodeId)
+  const labels: HierarchyRingLabel[] = []
+  const cfg = DEFAULTS
 
-  for (const node of nodes) {
-    const arch =
-      (node.meta?.architectureLayer as ArchitectureLayerId | undefined) ?? 'other'
-    if (arch === 'entry') continue
-    if (!positions[node.id]) continue
-    if (!clusters.has(arch)) clusters.set(arch, { ids: [], cx: 0, cy: 0 })
-    clusters.get(arch)!.ids.push(node.id)
+  for (const depth of [...layers.keys()].sort((a, b) => a - b)) {
+    if (depth === 0) continue
+    const ids = layers.get(depth) ?? []
+    const ringCount = Math.ceil(ids.length / cfg.maxNodesPerRing)
+    const outerRingIndex = Math.max(0, ringCount - 1)
+    const base = depthBaseRadius(depth, cfg)
+    const minR = minRadiusForCount(
+      Math.min(ids.length, cfg.maxNodesPerRing),
+      cfg.nodeWidth,
+      cfg.nodeGap
+    )
+    const radius = Math.min(
+      cfg.maxRadius,
+      Math.max(base + outerRingIndex * cfg.subRingGap, minR + base * 0.15)
+    )
+    labels.push({
+      depth,
+      label: labelForDepth(depth),
+      radius,
+      x: 0,
+      y: -radius - 32
+    })
   }
 
-  for (const cluster of clusters.values()) {
-    if (cluster.ids.length === 0) continue
-    let sx = 0
-    let sy = 0
-    for (const id of cluster.ids) {
-      sx += positions[id].x
-      sy += positions[id].y
-    }
-    cluster.cx = sx / cluster.ids.length
-    cluster.cy = sy / cluster.ids.length
-  }
-
-  const clusterList = [...clusters.entries()]
-  for (let pass = 0; pass < 8; pass++) {
-    for (let i = 0; i < clusterList.length; i++) {
-      for (let j = i + 1; j < clusterList.length; j++) {
-        const [, a] = clusterList[i]
-        const [, b] = clusterList[j]
-        const dx = b.cx - a.cx
-        const dy = b.cy - a.cy
-        const dist = Math.sqrt(dx * dx + dy * dy) || 0.01
-        if (dist >= minClusterDist) continue
-
-        const push = (minClusterDist - dist) / 2
-        const nx = dx / dist
-        const ny = dy / dist
-        translateCluster(positions, a.ids, -nx * push, -ny * push)
-        translateCluster(positions, b.ids, nx * push, ny * push)
-        a.cx -= nx * push
-        a.cy -= ny * push
-        b.cx += nx * push
-        b.cy += ny * push
-      }
-    }
-  }
-}
-
-function translateCluster(
-  positions: Record<string, LayoutPosition>,
-  ids: string[],
-  dx: number,
-  dy: number
-): void {
-  for (const id of ids) {
-    if (positions[id]) {
-      positions[id] = { x: positions[id].x + dx, y: positions[id].y + dy }
-    }
-  }
-}
-
-function resolveCollisions(
-  positions: Record<string, LayoutPosition>,
-  nodes: GraphNode[],
-  minDist: number,
-  passes: number
-): void {
-  const ids = nodes.map((n) => n.id).filter((id) => positions[id])
-  for (let pass = 0; pass < passes; pass++) {
-    for (let i = 0; i < ids.length; i++) {
-      for (let j = i + 1; j < ids.length; j++) {
-        const a = positions[ids[i]]
-        const b = positions[ids[j]]
-        const dx = b.x - a.x
-        const dy = b.y - a.y
-        const dist = Math.sqrt(dx * dx + dy * dy) || 0.01
-        const entryBoost = ids[i].includes('entry') || ids[j].includes('entry') ? 1.25 : 1
-        const required = minDist * entryBoost
-        if (dist < required) {
-          const push = (required - dist) / 2
-          const nx = dx / dist
-          const ny = dy / dist
-          a.x -= nx * push
-          a.y -= ny * push
-          b.x += nx * push
-          b.y += ny * push
-        }
-      }
-    }
-  }
-}
-
-function centerGraph(positions: Record<string, LayoutPosition>): void {
-  const vals = Object.values(positions)
-  if (vals.length === 0) return
-  const cx = vals.reduce((s, p) => s + p.x, 0) / vals.length
-  const cy = vals.reduce((s, p) => s + p.y, 0) / vals.length
-  for (const id of Object.keys(positions)) {
-    positions[id] = { x: positions[id].x - cx, y: positions[id].y - cy }
-  }
+  return labels
 }
 
 export function getNodesWithinDepth(
@@ -283,3 +260,49 @@ export function getNodesWithinDepth(
 
   return visible
 }
+
+function resolveRectCollisions(
+  positions: Record<string, LayoutPosition>,
+  boxW: number,
+  boxH: number,
+  passes: number
+): void {
+  const ids = Object.keys(positions)
+  const padX = boxW * 0.55
+  const padY = boxH * 0.55
+
+  for (let pass = 0; pass < passes; pass++) {
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const a = positions[ids[i]]
+        const b = positions[ids[j]]
+        const dx = b.x - a.x
+        const dy = b.y - a.y
+        const overlapX = padX - Math.abs(dx)
+        const overlapY = padY - Math.abs(dy)
+        if (overlapX > 0 && overlapY > 0) {
+          const pushX = overlapX / 2
+          const pushY = overlapY / 2
+          const signX = dx === 0 ? (i % 2 === 0 ? 1 : -1) : Math.sign(dx)
+          const signY = dy === 0 ? (j % 2 === 0 ? 1 : -1) : Math.sign(dy)
+          a.x -= signX * pushX
+          a.y -= signY * pushY
+          b.x += signX * pushX
+          b.y += signY * pushY
+        }
+      }
+    }
+  }
+}
+
+function centerGraph(positions: Record<string, LayoutPosition>): void {
+  const vals = Object.values(positions)
+  if (vals.length === 0) return
+  const cx = vals.reduce((s, p) => s + p.x, 0) / vals.length
+  const cy = vals.reduce((s, p) => s + p.y, 0) / vals.length
+  for (const id of Object.keys(positions)) {
+    positions[id] = { x: positions[id].x - cx, y: positions[id].y - cy }
+  }
+}
+
+export type { DependencyDepthResult }

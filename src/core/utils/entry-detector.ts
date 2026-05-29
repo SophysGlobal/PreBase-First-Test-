@@ -19,7 +19,15 @@ const ENTRY_CANDIDATES = [
   'App.tsx',
   'app.tsx',
   'server.ts',
-  'server.js'
+  'server.js',
+  'main.py',
+  'app.py',
+  'manage.py',
+  'main.go',
+  'cmd/main.go',
+  'src/main.rs',
+  'Program.cs',
+  'main.swift'
 ]
 
 export function detectEntryNodeId(
@@ -56,6 +64,11 @@ export function detectEntryNodeId(
     if (/App\.(tsx|jsx)$/i.test(path)) score += 50
     if (/main\.(tsx|ts|jsx|js)$/i.test(path)) score += 45
     if (/index\.(tsx|ts|jsx|js)$/i.test(path)) score += 40
+    if (/Main\.java$/i.test(path)) score += 48
+    if (/Application\.java$/i.test(path)) score += 46
+    if (/main\.py$/i.test(path)) score += 44
+    if (/main\.go$/i.test(path)) score += 44
+    if (/main\.rs$/i.test(path)) score += 42
     if (path.startsWith('src/')) score += 10
     if (node.kind === 'component') score += 8
     scores.set(node.id, score)

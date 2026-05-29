@@ -1,6 +1,28 @@
 import type { GraphNode, GraphSnapshot } from '../../../core/types'
+import { chunkArray } from '../../../core/layout/dependency-depth'
 
-export function getDirectChildren(snapshot: GraphSnapshot, folderId: string): GraphNode[] {
+const MAX_CHILDREN_PER_RING = 8
+const BASE_RADIUS = 82
+const RING_STEP = 26
+const MAX_EXPANSION_RADIUS = 210
+
+export function buildChildrenIndex(nodes: GraphNode[]): Map<string, GraphNode[]> {
+  const index = new Map<string, GraphNode[]>()
+  for (const node of nodes) {
+    if (!node.parentId) continue
+    const list = index.get(node.parentId)
+    if (list) list.push(node)
+    else index.set(node.parentId, [node])
+  }
+  return index
+}
+
+export function getDirectChildren(
+  snapshot: GraphSnapshot,
+  folderId: string,
+  index?: Map<string, GraphNode[]>
+): GraphNode[] {
+  if (index) return index.get(folderId) ?? []
   return snapshot.nodes.filter((n) => n.parentId === folderId)
 }
 
@@ -23,9 +45,10 @@ export function getDescendantIds(snapshot: GraphSnapshot, folderId: string): Set
 export function isNodeHiddenByCollapsedFolders(
   node: GraphNode,
   snapshot: GraphSnapshot,
-  expandedFolderIds: Set<string>
+  expandedFolderIds: Set<string>,
+  treeMode: boolean
 ): boolean {
-  if (node.kind === 'folder') return false
+  if (!treeMode || node.kind === 'folder') return false
 
   let parentId = node.parentId
   while (parentId) {
@@ -41,19 +64,21 @@ export function isNodeHiddenByCollapsedFolders(
 export function computeRadialPositions(
   center: { x: number; y: number },
   childIds: string[],
-  radius = 120
+  baseRadius = BASE_RADIUS
 ): Record<string, { x: number; y: number }> {
   const positions: Record<string, { x: number; y: number }> = {}
-  const n = childIds.length
-  if (n === 0) return positions
+  if (childIds.length === 0) return positions
 
-  const r = radius + Math.min(n * 6, 48)
-  childIds.forEach((id, i) => {
-    const angle = (2 * Math.PI * i) / n - Math.PI / 2
-    positions[id] = {
-      x: center.x + Math.cos(angle) * r,
-      y: center.y + Math.sin(angle) * r
-    }
+  const rings = chunkArray(childIds, MAX_CHILDREN_PER_RING)
+  rings.forEach((ringIds, ringIndex) => {
+    const radius = Math.min(MAX_EXPANSION_RADIUS, baseRadius + ringIndex * RING_STEP)
+    ringIds.forEach((id, i) => {
+      const angle = (2 * Math.PI * i) / ringIds.length - Math.PI / 2
+      positions[id] = {
+        x: center.x + Math.cos(angle) * radius,
+        y: center.y + Math.sin(angle) * radius
+      }
+    })
   })
   return positions
 }

@@ -54,7 +54,7 @@ function ArchitectureNodeComponent({ data }: NodeProps) {
   let boxShadow: string
   if (d.selected) {
     boxShadow =
-      '0 0 0 1.5px rgba(45,212,191,0.45), 0 4px 28px rgba(45,212,191,0.22), 0 8px 40px rgba(0,0,0,0.3)'
+      '0 0 0 2px rgba(45,212,191,0.65), 0 0 24px rgba(45,212,191,0.28), 0 6px 32px rgba(16,185,129,0.18), 0 10px 40px rgba(0,0,0,0.35)'
   } else if (d.focused) {
     boxShadow = '0 0 0 1px rgba(45,212,191,0.2), 0 3px 16px rgba(45,212,191,0.08), 0 2px 12px rgba(0,0,0,0.22)'
   } else if (d.highlighted) {
@@ -69,7 +69,8 @@ function ArchitectureNodeComponent({ data }: NodeProps) {
 
   let background: string
   if (d.selected) {
-    background = 'linear-gradient(135deg, rgba(45,212,191,0.2) 0%, rgba(16,185,129,0.14) 100%)'
+    background =
+      'linear-gradient(145deg, rgba(45,212,191,0.32) 0%, rgba(16,185,129,0.22) 48%, rgba(22, 22, 26, 0.92) 100%)'
   } else if (d.isEntry) {
     background = 'rgba(245,158,11,0.06)'
   } else if (isFolder) {
@@ -84,7 +85,7 @@ function ArchitectureNodeComponent({ data }: NodeProps) {
 
   let borderColor: string
   if (d.selected) {
-    borderColor = 'rgba(45,212,191,0.55)'
+    borderColor = 'rgba(45,212,191,0.75)'
   } else if (d.focused && !d.selected) {
     borderColor = 'rgba(45,212,191,0.28)'
   } else if (d.isEntry) {
@@ -117,7 +118,9 @@ function ArchitectureNodeComponent({ data }: NodeProps) {
               ? `${d.path}\n\n${d.description ?? ''}`
               : d.description
         }
-        className="group relative flex items-center gap-2 rounded-xl backdrop-blur-md cursor-pointer select-none px-3 py-2.5 border"
+        className={`group relative flex items-center gap-2 rounded-xl backdrop-blur-md cursor-pointer select-none px-3 py-2.5 border ${
+          d.selected ? 'ring-1 ring-teal-400/30' : ''
+        }`}
         style={{
           width: NODE_WIDTH,
           minHeight: d.isEntry ? ENTRY_HEIGHT : NODE_HEIGHT,
@@ -141,7 +144,11 @@ function ArchitectureNodeComponent({ data }: NodeProps) {
           <Icon className="w-3.5 h-3.5" style={{ color: d.color }} />
         </div>
         <div className="flex flex-col min-w-0 flex-1">
-          <span className="text-xs font-medium truncate leading-tight text-text-primary">
+          <span
+            className={`text-xs font-medium truncate leading-tight ${
+              d.selected ? 'text-teal-50' : 'text-text-primary'
+            }`}
+          >
             {d.label}
           </span>
           {d.isEntry ? (

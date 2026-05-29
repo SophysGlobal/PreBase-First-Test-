@@ -3,43 +3,19 @@ import type { LayoutMode } from '../../../core/types'
 export const LAYOUT_MODE_HELP: Record<LayoutMode, { title: string; body: string }> = {
   hierarchy: {
     title: 'Hierarchy',
-    body: 'Radial dependency flow from the entry point outward, grouped by architecture layer. Best for understanding how your app root connects to the rest of the system.'
+    body: 'Concentric dependency rings from the entry point outward. Each ring caps node count to stay readable.'
   },
   pyramid: {
     title: 'Pyramid',
-    body: 'Top-down layered stack with entry systems near the top and dependencies cascading downward. Ideal for service tiers and vertical architecture.'
-  },
-  circular: {
-    title: 'Circular',
-    body: 'Radial organization around root systems with balanced ring spacing. Great for seeing symmetric dependency rings at a glance.'
-  },
-  clustered: {
-    title: 'Clustered',
-    body: 'Groups related files into distinct vertical regions with clear separation between architectural areas. Good for large monorepos.'
+    body: 'Vertical dependency tiers with compact row spacing. Entry at top, deeper imports cascade downward.'
   },
   scattered: {
     title: 'Scattered',
-    body: 'Looser physics-based spacing with extra breathing room between nodes. Useful for exploratory browsing of dense graphs.'
-  },
-  force: {
-    title: 'Force',
-    body: 'Physics-based repulsion that distributes nodes naturally. Helps reveal unexpected relationships in complex dependency webs.'
-  },
-  grid: {
-    title: 'Grid',
-    body: 'Structured row/column layout for maximum readability when you need a calm, catalog-like overview of all modules.'
+    body: 'Compact exploratory layout with controlled radial spread. Related systems stay reachable without extreme panning.'
   }
 }
 
-export const LAYOUT_PRESETS: LayoutMode[] = [
-  'hierarchy',
-  'pyramid',
-  'circular',
-  'clustered',
-  'scattered',
-  'force',
-  'grid'
-]
+export const LAYOUT_PRESETS: LayoutMode[] = ['hierarchy', 'pyramid', 'scattered']
 
 export const EDGE_TYPE_HELP = [
   {
@@ -86,4 +62,15 @@ export const FOCUS_NEIGHBORHOOD_HELP = {
 export const HIDE_LOW_IMPORTANCE_HELP = {
   title: 'Hide low-importance',
   body: 'Hides leaf files with no dependents and minimal exports to reduce clutter in large codebases.'
+}
+
+export const GRAPH_ORG_MODE_HELP = {
+  dependencies: {
+    title: 'Dependencies',
+    body: 'Pure file-to-file dependency graph without folder containers. Best for tracing imports and architecture relationships.'
+  },
+  tree: {
+    title: 'Project tree',
+    body: 'Organizes the graph by real project folders. Click a folder to select, click again to expand or collapse its contents radially.'
+  }
 }
