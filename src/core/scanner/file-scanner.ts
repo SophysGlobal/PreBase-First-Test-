@@ -2,7 +2,8 @@ import fg from 'fast-glob'
 import { basename, extname } from 'path'
 import ignore from 'ignore'
 import { DEFAULT_IGNORE_PATTERNS } from '../utils/ignore-patterns'
-import { isCodeFile, normalizePath, toRelative } from '../utils/paths'
+import { isGraphRelevantFile } from '../utils/project-files'
+import { normalizePath, toRelative } from '../utils/paths'
 import type { ScannedFile } from '../types'
 
 export interface ScanOptions {
@@ -35,7 +36,7 @@ export class FileScanner {
     for (const absolutePath of entries) {
       const relativePath = toRelative(projectRoot, absolutePath)
       if (this.ig.ignores(relativePath)) continue
-      if (!isCodeFile(absolutePath)) continue
+      if (!isGraphRelevantFile(relativePath)) continue
 
       files.push({
         absolutePath: normalizePath(absolutePath),

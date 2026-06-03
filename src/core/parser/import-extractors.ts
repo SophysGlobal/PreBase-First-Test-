@@ -90,7 +90,7 @@ function extractKotlinImports(content: string): ImportEntry[] {
 
 function extractPythonImports(content: string): ImportEntry[] {
   const imports: ImportEntry[] = []
-  const fromRe = /from\s+([a-zA-Z0-9_.]+)\s+import/g
+  const fromRe = /from\s+(\.+[a-zA-Z0-9_.]*|[a-zA-Z0-9_.]+)\s+import/g
   const importRe = /^import\s+([a-zA-Z0-9_.]+)/gm
   let m: RegExpExecArray | null
   while ((m = fromRe.exec(content)) !== null) {
@@ -225,6 +225,17 @@ function extractVueSvelteImports(content: string): ImportEntry[] {
   const scriptMatch = content.match(/<script[^>]*>([\s\S]*?)<\/script>/i)
   const script = scriptMatch?.[1] ?? content
   return extractJsLikeImports(script)
+}
+
+export function extractPackageName(file: ScannedFile, content: string): string | undefined {
+  const ext = file.extension
+  if (ext === '.java') {
+    return content.match(/^[\s\S]*?package\s+([a-zA-Z0-9_.]+)\s*;/m)?.[1]
+  }
+  if (ext === '.kt' || ext === '.kts') {
+    return content.match(/^[\s\S]*?package\s+([a-zA-Z0-9_.]+)/m)?.[1]
+  }
+  return undefined
 }
 
 export function isBabelParsableExtension(ext: string): boolean {

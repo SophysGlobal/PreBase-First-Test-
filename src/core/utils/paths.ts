@@ -1,3 +1,4 @@
+import { existsSync } from 'fs'
 import { extname, join, normalize, relative, resolve } from 'path'
 import type { PathMappings } from './tsconfig-paths'
 
@@ -78,6 +79,7 @@ function tryResolveFile(projectRoot: string, absoluteBase: string): string | nul
   ]
 
   for (const c of candidates) {
+    if (!existsSync(c)) continue
     const rel = toRelative(projectRoot, c)
     if (!rel.startsWith('..') && !rel.startsWith('/')) return rel
   }
@@ -88,6 +90,7 @@ function tryResolveJavaImport(projectRoot: string, importSource: string): string
   const pathLike = importSource.replace(/\./g, '/')
   const bases = [
     join(projectRoot, 'src/main/java', pathLike),
+    join(projectRoot, 'src/main/kotlin', pathLike),
     join(projectRoot, 'src', pathLike),
     join(projectRoot, pathLike)
   ]
@@ -129,8 +132,10 @@ export function resolveImportPath(
   }
 
   if (/^[a-zA-Z_][\w.]*$/.test(source) && source.includes('.') && !source.startsWith('@')) {
-    const java = tryResolveJavaImport(projectRoot, source)
-    if (java) return java
+    if (fromFile.endsWith('.java') || fromFile.endsWith('.kt') || fromFile.endsWith('.kts')) {
+      const java = tryResolveJavaImport(projectRoot, source)
+      if (java) return java
+    }
   }
 
   if (fromFile.endsWith('.py')) {

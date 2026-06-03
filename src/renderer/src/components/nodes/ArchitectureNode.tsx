@@ -1,6 +1,5 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
-import { motion } from 'framer-motion'
 import { Box, ChevronRight, FileCode, Folder, FolderOpen, Layers, Star, Zap } from 'lucide-react'
 
 export interface ArchitectureNodeData {
@@ -11,8 +10,10 @@ export interface ArchitectureNodeData {
   dimmed?: boolean
   softDimmed?: boolean
   highlighted?: boolean
+  searchHighlight?: 'none' | 'soft' | 'strong'
   focused?: boolean
   selected?: boolean
+  canDrag?: boolean
   isEntry?: boolean
   isFolder?: boolean
   folderExpanded?: boolean
@@ -29,6 +30,16 @@ const NODE_WIDTH = 168
 const NODE_HEIGHT = 52
 const ENTRY_HEIGHT = 58
 
+// Four-sided handles so edges can attach to the side facing the connected node.
+// Each side carries both a source and a target handle (ids `s-<side>` / `t-<side>`);
+// the edge builder picks the pair based on relative node position.
+const SIDE_HANDLES = [
+  { side: 'top', position: Position.Top },
+  { side: 'right', position: Position.Right },
+  { side: 'bottom', position: Position.Bottom },
+  { side: 'left', position: Position.Left }
+] as const
+
 const kindIcons: Record<string, typeof FileCode> = {
   folder: Folder,
   file: FileCode,
@@ -38,9 +49,12 @@ const kindIcons: Record<string, typeof FileCode> = {
   module: FileCode
 }
 
-function ArchitectureNodeComponent({ data }: NodeProps) {
+function ArchitectureNodeComponent({ data, selected: rfSelected }: NodeProps) {
   const d = data as unknown as ArchitectureNodeData
+  const [hovered, setHovered] = useState(false)
+  const isSelected = d.selected || rfSelected
   const isFolder = d.isFolder || d.kind === 'folder'
+  const canDrag = d.canDrag === true
   const Icon = d.isEntry
     ? Star
     : isFolder
@@ -51,75 +65,108 @@ function ArchitectureNodeComponent({ data }: NodeProps) {
 
   const opacity = d.dimmed ? 0.6 : d.softDimmed ? 0.82 : 1
 
+  // LOD shadows: blurred/glowing shadows are expensive to composite and, applied
+  // to every node, exhaust raster tile memory. Reserve blur for the few emphasized
+  // states (selected / search / entry / hover); the common default uses a flat,
+  // blur-free ring so hundreds of nodes stay cheap to paint.
   let boxShadow: string
-  if (d.selected) {
-    boxShadow =
-      '0 0 0 2px rgba(45,212,191,0.65), 0 0 24px rgba(45,212,191,0.28), 0 6px 32px rgba(16,185,129,0.18), 0 10px 40px rgba(0,0,0,0.35)'
+  if (isSelected) {
+    boxShadow = '0 0 0 2px rgba(45,212,191,0.75), 0 4px 14px rgba(0,0,0,0.24)'
+  } else if (hovered) {
+    boxShadow = '0 0 0 1px rgba(45,212,191,0.42)'
   } else if (d.focused) {
-    boxShadow = '0 0 0 1px rgba(45,212,191,0.2), 0 3px 16px rgba(45,212,191,0.08), 0 2px 12px rgba(0,0,0,0.22)'
+    boxShadow = '0 0 0 1px rgba(45,212,191,0.22)'
+  } else if (d.searchHighlight === 'strong') {
+    boxShadow = '0 0 0 1.5px rgba(45,212,191,0.5), 0 0 20px rgba(45,212,191,0.2)'
+  } else if (d.searchHighlight === 'soft') {
+    boxShadow = '0 0 0 1px rgba(45,212,191,0.28)'
   } else if (d.highlighted) {
-    boxShadow = '0 0 0 1px rgba(45,212,191,0.14), 0 2px 14px rgba(0,0,0,0.2)'
+    boxShadow = '0 0 0 1px rgba(45,212,191,0.18)'
   } else if (d.isEntry) {
-    boxShadow = '0 0 28px rgba(245,158,11,0.12), 0 4px 16px rgba(0,0,0,0.22)'
+    boxShadow = '0 0 0 1px rgba(245,158,11,0.3)'
   } else if (isFolder && d.folderExpanded) {
-    boxShadow = '0 0 0 1px rgba(113,113,122,0.25), 0 3px 14px rgba(0,0,0,0.2)'
+    boxShadow = '0 0 0 1px rgba(113,113,122,0.25)'
   } else {
-    boxShadow = '0 2px 10px rgba(0,0,0,0.18)'
+    boxShadow = 'none'
   }
 
   let background: string
-  if (d.selected) {
+  if (isSelected) {
     background =
-      'linear-gradient(145deg, rgba(45,212,191,0.32) 0%, rgba(16,185,129,0.22) 48%, rgba(22, 22, 26, 0.92) 100%)'
+      'linear-gradient(145deg, rgba(45,212,191,0.38) 0%, rgba(16,185,129,0.26) 50%, rgba(20, 24, 28, 0.95) 100%)'
   } else if (d.isEntry) {
     background = 'rgba(245,158,11,0.06)'
   } else if (isFolder) {
     background = d.folderExpanded
       ? 'rgba(36,36,40,0.92)'
       : 'rgba(22, 22, 24, 0.94)'
-  } else if (d.highlighted && !d.selected) {
+  } else if (d.searchHighlight === 'strong' && !isSelected) {
+    background = 'rgba(45,212,191,0.14)'
+  } else if (d.searchHighlight === 'soft' && !isSelected) {
+    background = 'rgba(45,212,191,0.08)'
+  } else if (d.highlighted && !isSelected) {
     background = 'rgba(45,212,191,0.07)'
   } else {
     background = 'rgba(22, 22, 24, 0.94)'
   }
 
   let borderColor: string
-  if (d.selected) {
-    borderColor = 'rgba(45,212,191,0.75)'
-  } else if (d.focused && !d.selected) {
+  if (isSelected) {
+    borderColor = 'rgba(45,212,191,0.85)'
+  } else if (hovered) {
+    borderColor = 'rgba(45,212,191,0.45)'
+  } else if (d.focused && !isSelected) {
     borderColor = 'rgba(45,212,191,0.28)'
   } else if (d.isEntry) {
     borderColor = 'rgba(245,158,11,0.38)'
   } else if (isFolder) {
     borderColor = d.folderExpanded ? 'rgba(161,161,170,0.28)' : 'rgba(255,255,255,0.08)'
-  } else if (d.highlighted && !d.selected) {
+  } else if (d.searchHighlight === 'strong' && !isSelected) {
+    borderColor = 'rgba(45,212,191,0.55)'
+  } else if (d.searchHighlight === 'soft' && !isSelected) {
+    borderColor = 'rgba(45,212,191,0.32)'
+  } else if (d.highlighted && !isSelected) {
     borderColor = 'rgba(45,212,191,0.22)'
   } else {
     borderColor = 'rgba(255,255,255,0.06)'
   }
 
+  const cursorClass = canDrag ? 'prebase-drag-ready' : 'prebase-nodrag'
+
   return (
     <>
-      <Handle type="target" position={Position.Left} className="!opacity-0 !w-2 !h-2" />
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity, scale: 1 }}
-        whileHover={{
-          scale: 1.025,
-          boxShadow: d.selected
-            ? boxShadow
-            : '0 0 0 1px rgba(45,212,191,0.28), 0 3px 18px rgba(45,212,191,0.1), 0 4px 20px rgba(0,0,0,0.24)'
-        }}
-        transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+      {SIDE_HANDLES.map(({ side, position }) => (
+        <Handle
+          key={`s-${side}`}
+          id={`s-${side}`}
+          type="source"
+          position={position}
+          isConnectable={false}
+          className="!opacity-0 !w-1.5 !h-1.5 !border-0 !bg-transparent !pointer-events-none"
+        />
+      ))}
+      {SIDE_HANDLES.map(({ side, position }) => (
+        <Handle
+          key={`t-${side}`}
+          id={`t-${side}`}
+          type="target"
+          position={position}
+          isConnectable={false}
+          className="!opacity-0 !w-1.5 !h-1.5 !border-0 !bg-transparent !pointer-events-none"
+        />
+      ))}
+      <div
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         title={
           isFolder
-            ? `${d.label} — click to ${d.folderExpanded ? 'collapse' : 'expand'}`
+            ? `${d.label} — click to select, click again to ${d.folderExpanded ? 'collapse' : 'expand'}`
             : d.path
               ? `${d.path}\n\n${d.description ?? ''}`
               : d.description
         }
-        className={`group relative flex items-center gap-2 rounded-xl backdrop-blur-md cursor-pointer select-none px-3 py-2.5 border ${
-          d.selected ? 'ring-1 ring-teal-400/30' : ''
+        className={`architecture-node relative flex items-center gap-2 rounded-xl select-none px-3 py-2.5 border ${cursorClass} ${
+          isSelected ? 'ring-1 ring-teal-400/40' : ''
         }`}
         style={{
           width: NODE_WIDTH,
@@ -128,7 +175,12 @@ function ArchitectureNodeComponent({ data }: NodeProps) {
           background,
           borderColor,
           boxShadow,
-          transition: 'background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease'
+          opacity,
+          // CSS-only hover scale. Avoids framer-motion promoting EVERY node to its
+          // own compositor layer (the main raster-tile-memory contributor).
+          transform: hovered && !isSelected ? 'scale(1.05)' : 'none',
+          transition:
+            'background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.16s ease, opacity 0.18s ease'
         }}
       >
         {isFolder && (
@@ -146,7 +198,7 @@ function ArchitectureNodeComponent({ data }: NodeProps) {
         <div className="flex flex-col min-w-0 flex-1">
           <span
             className={`text-xs font-medium truncate leading-tight ${
-              d.selected ? 'text-teal-50' : 'text-text-primary'
+              isSelected ? 'text-teal-50' : 'text-text-primary'
             }`}
           >
             {d.label}
@@ -162,7 +214,7 @@ function ArchitectureNodeComponent({ data }: NodeProps) {
           ) : (
             <span
               className="text-[10px] truncate leading-tight mt-0.5"
-              style={{ color: d.selected ? 'rgba(45,212,191,0.7)' : 'rgba(161,161,170,0.8)' }}
+              style={{ color: isSelected ? 'rgba(45,212,191,0.85)' : 'rgba(161,161,170,0.8)' }}
             >
               {d.path?.split('/').slice(-2).join('/') ?? ''}
             </span>
@@ -172,16 +224,15 @@ function ArchitectureNodeComponent({ data }: NodeProps) {
           <span
             className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] border"
             style={{
-              background: d.selected ? 'rgba(45,212,191,0.18)' : 'rgba(36,36,40,1)',
-              borderColor: d.selected ? 'rgba(45,212,191,0.35)' : 'rgba(255,255,255,0.08)',
-              color: d.selected ? 'rgba(45,212,191,0.9)' : 'rgba(161,161,170,0.9)'
+              background: isSelected ? 'rgba(45,212,191,0.22)' : 'rgba(36,36,40,1)',
+              borderColor: isSelected ? 'rgba(45,212,191,0.45)' : 'rgba(255,255,255,0.08)',
+              color: isSelected ? 'rgba(45,212,191,0.95)' : 'rgba(161,161,170,0.9)'
             }}
           >
             {d.meta.imports.length}
           </span>
         )}
-      </motion.div>
-      <Handle type="source" position={Position.Right} className="!opacity-0 !w-2 !h-2" />
+      </div>
     </>
   )
 }

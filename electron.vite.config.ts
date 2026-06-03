@@ -27,6 +27,17 @@ export default defineConfig({
     optimizeDeps: {
       include: ['monaco-editor']
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('react-force-graph') || id.includes('force-graph') || id.includes('d3-')) {
+              return 'force-graph'
+            }
+          }
+        }
+      }
+    },
     plugins: [react()]
   }
 })

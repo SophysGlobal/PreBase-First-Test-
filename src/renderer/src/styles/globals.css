@@ -172,22 +172,85 @@ a,
   background: transparent !important;
 }
 
+/*
+ * Static dot grid painted on the graph wrapper (viewport-fixed). Unlike React
+ * Flow's <Background>, this does NOT live inside the zoom-transformed viewport,
+ * so its raster size stays constant instead of growing with zoom — which is
+ * what previously exhausted tile memory and caused flicker at high zoom.
+ */
+.graph-dot-surface {
+  background-color: var(--color-surface);
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Isolate graph viewport repaints so zoom/pan does not flash the rest of the app. */
+.graph-viewport-shell {
+  contain: layout paint;
+  isolation: isolate;
+}
+
+.graph-viewport-shell .react-flow {
+  contain: layout paint;
+}
+
+.hierarchy-labels-layer {
+  contain: layout paint;
+  pointer-events: none;
+}
+
+/* While zooming/panning: lighter edge paint + hide expensive hierarchy rings. */
+.graph-viewport-shell.is-zooming .react-flow__edge-path {
+  opacity: 0.55;
+  stroke-width: 1px !important;
+}
+
+.graph-viewport-shell.is-zooming .react-flow__edges {
+  pointer-events: none;
+}
+
+.graph-viewport-shell.is-zooming .react-flow__node {
+  transition: none !important;
+}
+
+[data-theme='light'] .graph-dot-surface {
+  background-image: radial-gradient(rgba(0, 0, 0, 0.06) 1px, transparent 1px);
+}
+
+/* Edges are non-interactive — no pointer events, no hover repaint. */
+.react-flow__edge,
 .react-flow__edge-path {
-  stroke: rgba(255, 255, 255, 0.14);
-  stroke-width: 1;
-  pointer-events: stroke;
+  pointer-events: none !important;
 }
 
 [data-theme='light'] .react-flow__edge-path {
   stroke: rgba(0, 0, 0, 0.18);
 }
 
-.react-flow__edge.selected .react-flow__edge-path {
-  stroke: rgba(245, 158, 11, 0.8) !important;
+/* Keep edges visible — default RF stacking hides long segments under node cards */
+.react-flow__edges {
+  z-index: 3;
 }
 
-.react-flow__edge.edge-hoverable .react-flow__edge-path {
-  transition: stroke 0.2s ease, stroke-width 0.2s ease;
+.react-flow__nodes {
+  z-index: 2;
+}
+
+/* Stable cursor model — pointer on nodes, grab only when drag-ready, grabbing while dragging */
+.react-flow__node {
+  cursor: default;
+}
+
+.react-flow__node .architecture-node {
+  cursor: pointer;
+}
+
+.react-flow__node .architecture-node.prebase-drag-ready {
+  cursor: grab;
+}
+
+.react-flow__node.dragging .architecture-node {
+  cursor: grabbing !important;
 }
 
 .react-flow__pane {
@@ -195,6 +258,14 @@ a,
 }
 
 .react-flow__pane:active {
+  cursor: grabbing;
+}
+
+.react-flow__minimap {
+  cursor: default;
+}
+
+.react-flow__minimap:active {
   cursor: grabbing;
 }
 

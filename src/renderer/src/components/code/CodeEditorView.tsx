@@ -14,6 +14,10 @@ export function CodeEditorView() {
   const editorLineNumbers = useSettingsStore((s) => s.editorLineNumbers)
   const editorWordWrap = useSettingsStore((s) => s.editorWordWrap)
   const editorMinimap = useSettingsStore((s) => s.editorMinimap)
+  const editorBracketPairColorization = useSettingsStore((s) => s.editorBracketPairColorization)
+  const editorRenderWhitespace = useSettingsStore((s) => s.editorRenderWhitespace)
+  const editorScrollBeyondLastLine = useSettingsStore((s) => s.editorScrollBeyondLastLine)
+  const editorCursorSmoothCaret = useSettingsStore((s) => s.editorCursorSmoothCaret)
 
   const monaco = useMonaco()
   const [content, setContent] = useState('')
@@ -82,13 +86,15 @@ export function CodeEditorView() {
     lineHeight: Math.round(editorFontSize * 1.45),
     fontFamily: "'JetBrains Mono', 'SF Mono', Menlo, Monaco, monospace",
     fontLigatures: true,
-    scrollBeyondLastLine: false,
+    scrollBeyondLastLine: editorScrollBeyondLastLine,
     padding: { top: 12, bottom: 12 },
     renderLineHighlight: 'line' as const,
     smoothScrolling: true,
     lineNumbers: editorLineNumbers ? ('on' as const) : ('off' as const),
     wordWrap: editorWordWrap ? ('on' as const) : ('off' as const),
-    bracketPairColorization: { enabled: true },
+    bracketPairColorization: { enabled: editorBracketPairColorization },
+    renderWhitespace: editorRenderWhitespace,
+    cursorSmoothCaretAnimation: editorCursorSmoothCaret ? ('on' as const) : ('off' as const),
     guides: { indentation: true },
     automaticLayout: true
   }

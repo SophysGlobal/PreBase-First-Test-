@@ -19,6 +19,7 @@ export interface GraphNode {
     componentCount?: number
     architectureLayer?: string
     importance?: number
+    isMetadata?: boolean
   }
 }
 
@@ -68,6 +69,8 @@ export interface ParseResult {
   functions: string[]
   components: string[]
   isComponentFile: boolean
+  /** JVM package declaration (Java/Kotlin), when present. */
+  packageName?: string
 }
 
 export interface ImportRef {

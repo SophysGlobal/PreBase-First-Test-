@@ -64,6 +64,11 @@ export const HIDE_LOW_IMPORTANCE_HELP = {
   body: 'Hides leaf files with no dependents and minimal exports to reduce clutter in large codebases.'
 }
 
+export const VISIBLE_RELATED_CONNECTIONS_HELP = {
+  title: 'Visible related connections',
+  body: 'The connection to the root file/folder is always displayed. This setting controls how many additional key relationships are shown per file (up to 2), ranked by import strength and architectural importance. Applies to both Tree and Network views.'
+}
+
 export const GRAPH_ORG_MODE_HELP = {
   dependencies: {
     title: 'Dependencies',

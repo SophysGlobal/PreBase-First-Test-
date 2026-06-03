@@ -1,5 +1,6 @@
 import type { ArchitectureLayerId } from '../../../core/utils/architecture-layers'
 import { computeNodeImportance } from '../../../core/utils/architecture-layers'
+import { isLowImportancePath } from '../../../core/graph/graph-completeness'
 import type { GraphNode, GraphSnapshot } from '../../../core/types'
 import { getNodesWithinDepth } from '../../../core/layout/hierarchy-layout'
 import { isNodeHiddenByCollapsedFolders } from './folder-expansion'
@@ -16,6 +17,7 @@ export interface VisibilityOptions {
   selectedNodeId: string | null
   graphOrganizationMode: GraphOrganizationMode
   expandedFolderIds: Set<string>
+  maxRenderedNodes?: number
 }
 
 export function getVisibleNodeIds(
@@ -78,6 +80,15 @@ export function getVisibleNodeIds(
       continue
     }
 
+    if (options.hideLowImportance) {
+      if (layer === 'tests') continue
+      if (layer === 'config' || isLowImportancePath(node.path)) continue
+      if (layer === 'utils') {
+        const score = importanceScores.get(node.id) ?? 0
+        if (score < threshold && node.id !== focusId) continue
+      }
+    }
+
     if (options.isolatedLayer) {
       if (layer !== options.isolatedLayer) continue
     } else if (!options.layerVisibility[layer]) {
@@ -86,13 +97,32 @@ export function getVisibleNodeIds(
 
     if (neighborhood && !neighborhood.has(node.id)) continue
 
-    if (options.hideLowImportance && layer === 'utils') {
-      const score = importanceScores.get(node.id) ?? 0
-      if (score < threshold && node.id !== focusId) continue
-    }
-    if (options.hideLowImportance && layer === 'tests') continue
-
     ids.add(node.id)
+  }
+
+  const maxNodes = options.maxRenderedNodes ?? 0
+  if (maxNodes > 0 && ids.size > maxNodes) {
+    const ranked = [...ids]
+      .map((id) => {
+        const node = snapshot.nodes.find((n) => n.id === id)
+        if (!node) return { id, score: 0 }
+        if (node.isEntry || node.id === snapshot.entryNodeId) return { id, score: 10000 }
+        if (node.kind === 'folder') return { id, score: 5000 }
+        return {
+          id,
+          score: computeNodeImportance(id, snapshot.edges).score
+        }
+      })
+      .sort((a, b) => b.score - a.score)
+
+    const capped = new Set<string>()
+    for (const { id } of ranked.slice(0, maxNodes)) {
+      capped.add(id)
+    }
+    if (snapshot.entryNodeId) capped.add(snapshot.entryNodeId)
+    if (options.focusedNodeId) capped.add(options.focusedNodeId)
+    if (options.selectedNodeId) capped.add(options.selectedNodeId)
+    return capped
   }
 
   return ids

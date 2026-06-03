@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { LayoutRuntimeConfig } from '../core/layout/layout-config'
 import type { GraphSnapshot, IncrementalUpdate, LayoutMode } from '../core/types'
 
 export interface PrebaseAPI {
@@ -6,7 +7,7 @@ export interface PrebaseAPI {
   openProject: (path: string) => Promise<{ success: boolean; snapshot?: GraphSnapshot; error?: string }>
   closeProject: () => Promise<{ success: boolean }>
   getSnapshot: () => Promise<GraphSnapshot | null>
-  relayout: (mode: LayoutMode) => Promise<GraphSnapshot | null>
+  relayout: (mode: LayoutMode, runtime?: Partial<LayoutRuntimeConfig>) => Promise<GraphSnapshot | null>
   readFile: (relativePath: string) => Promise<string | null>
   onGraphFull: (callback: (snapshot: GraphSnapshot) => void) => () => void
   onGraphIncremental: (callback: (update: IncrementalUpdate) => void) => () => void
@@ -17,7 +18,7 @@ const api: PrebaseAPI = {
   openProject: (path) => ipcRenderer.invoke('project:open', path),
   closeProject: () => ipcRenderer.invoke('project:close'),
   getSnapshot: () => ipcRenderer.invoke('project:get-snapshot'),
-  relayout: (mode) => ipcRenderer.invoke('graph:relayout', mode),
+  relayout: (mode, runtime) => ipcRenderer.invoke('graph:relayout', mode, runtime),
   readFile: (relativePath) => ipcRenderer.invoke('file:read', relativePath),
   onGraphFull: (callback) => {
     const handler = (_: Electron.IpcRendererEvent, snapshot: GraphSnapshot) => callback(snapshot)

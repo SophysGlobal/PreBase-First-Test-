@@ -91,10 +91,13 @@ app.whenReady().then(() => {
     return projectService.getSnapshot()
   })
 
-  ipcMain.handle('graph:relayout', async (_, mode: LayoutMode) => {
-    const snapshot = await projectService.relayout(mode)
-    return snapshot
-  })
+  ipcMain.handle(
+    'graph:relayout',
+    async (_, mode: LayoutMode, runtime?: import('../core/layout/layout-config').LayoutRuntimeConfig) => {
+      const snapshot = await projectService.relayout(mode, runtime)
+      return snapshot
+    }
+  )
 
   ipcMain.handle('file:read', async (_, filePath: string) => {
     const snapshot = projectService.getSnapshot()

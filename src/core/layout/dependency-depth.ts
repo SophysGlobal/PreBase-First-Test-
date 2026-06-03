@@ -73,14 +73,34 @@ export function chunkArray<T>(items: T[], size: number): T[][] {
 
 export const HIERARCHY_LAYER_LABELS = [
   'Root',
-  'Layer 1 · Direct',
-  'Layer 2 · Secondary',
-  'Layer 3 · Deep',
-  'Layer 4+ · Outer'
+  'Layer 1',
+  'Layer 2',
+  'Layer 3',
+  'Layer 4',
+  'Layer 5+'
 ] as const
 
 export function labelForDepth(depth: number): string {
   if (depth <= 0) return HIERARCHY_LAYER_LABELS[0]
   if (depth < HIERARCHY_LAYER_LABELS.length) return HIERARCHY_LAYER_LABELS[depth]
-  return HIERARCHY_LAYER_LABELS[HIERARCHY_LAYER_LABELS.length - 1]
+  return `Layer ${depth}`
+}
+
+export function layerExplanationForDepth(depth: number): { title: string; body: string } {
+  if (depth <= 0) {
+    return {
+      title: 'Root',
+      body: 'The project entry point — the file PreBase identified as the architectural root (main, App, or index).'
+    }
+  }
+  if (depth === 1) {
+    return {
+      title: 'Layer 1',
+      body: 'Direct dependencies of the root. Files imported or referenced directly by the entry point.'
+    }
+  }
+  return {
+    title: `Layer ${depth}`,
+    body: `Dependencies used by Layer ${depth - 1} files — ${depth} hops from the entry point along import edges.`
+  }
 }

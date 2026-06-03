@@ -11,7 +11,8 @@ import {
   X
 } from 'lucide-react'
 import { useGraphStore } from '../../state/graph-store'
-import { getNodeInspectorData } from '../../utils/graph-metadata'
+import { useSettingsStore } from '../../state/settings-store'
+import { getNodeInspectorData, type NodeConnection } from '../../utils/graph-metadata'
 import { inferFileDescription } from '../../utils/file-description'
 import {
   folderPathFromId,
@@ -19,6 +20,7 @@ import {
 } from '../../utils/folder-expansion'
 
 export function NodeInspector() {
+  const inspectorWidth = useSettingsStore((s) => s.inspectorPanelWidth)
   const snapshot = useGraphStore((s) => s.snapshot)
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId)
   const inspectorOpen = useGraphStore((s) => s.inspectorOpen)
@@ -48,7 +50,8 @@ export function NodeInspector() {
           animate={{ x: 0, opacity: 1 }}
           exit={{ x: 20, opacity: 0 }}
           transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-          className="absolute top-0 right-0 h-full w-60 border-l border-border-subtle bg-surface-raised/92 backdrop-blur-xl z-30 flex flex-col shadow-panel titlebar-no-drag"
+          className="absolute top-0 right-0 h-full border-l border-border-subtle bg-surface-raised z-40 isolate flex flex-col shadow-panel titlebar-no-drag"
+          style={{ width: inspectorWidth }}
         >
           <div className="flex items-center justify-between px-3 py-2.5 border-b border-border-subtle shrink-0">
             <div className="flex items-center gap-2 min-w-0">
@@ -129,7 +132,7 @@ export function NodeInspector() {
   const data = getNodeInspectorData(snapshot, selectedNodeId)
   if (!data) return null
 
-  const { incoming, outgoing, incomingLabels, outgoingLabels } = data
+  const { incomingConnections, outgoingConnections } = data
   const description = inferFileDescription(node)
 
   return (
@@ -139,7 +142,8 @@ export function NodeInspector() {
         animate={{ x: 0, opacity: 1 }}
         exit={{ x: 20, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-        className="absolute top-0 right-0 h-full w-60 border-l border-border-subtle bg-surface-raised/92 backdrop-blur-xl z-30 flex flex-col shadow-panel titlebar-no-drag"
+        className="absolute top-0 right-0 h-full border-l border-border-subtle bg-surface-raised z-40 isolate flex flex-col shadow-panel titlebar-no-drag"
+        style={{ width: inspectorWidth }}
       >
         <div className="flex items-center justify-between px-3 py-2.5 border-b border-border-subtle shrink-0">
           <div className="flex items-center gap-2 min-w-0">
@@ -202,35 +206,31 @@ export function NodeInspector() {
           )}
 
           <div className="grid grid-cols-2 gap-1.5">
-            <MiniStat label="Imports" value={outgoing.length} />
-            <MiniStat label="Used by" value={incoming.length} />
+            <MiniStat label="Imports" value={outgoingConnections.length} />
+            <MiniStat label="Used by" value={incomingConnections.length} />
           </div>
 
-          {outgoingLabels.length > 0 && (
+          {outgoingConnections.length > 0 && (
             <section>
               <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1 flex items-center gap-1">
-                <ArrowUpRight className="w-3 h-3" /> Imports
+                <ArrowUpRight className="w-3 h-3" /> Connected files
               </p>
-              <ul className="space-y-0.5 max-h-[120px] overflow-y-auto sidebar-scroll">
-                {outgoingLabels.slice(0, 20).map((l) => (
-                  <li key={l} className="text-text-secondary truncate text-[11px]">
-                    {l}
-                  </li>
+              <ul className="space-y-1 max-h-[140px] overflow-y-auto sidebar-scroll">
+                {outgoingConnections.slice(0, 24).map((c) => (
+                  <ConnectionRow key={c.nodeId} connection={c} />
                 ))}
               </ul>
             </section>
           )}
 
-          {incomingLabels.length > 0 && (
+          {incomingConnections.length > 0 && (
             <section>
               <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1 flex items-center gap-1">
-                <ArrowDownLeft className="w-3 h-3" /> Dependents
+                <ArrowDownLeft className="w-3 h-3" /> Referenced by
               </p>
-              <ul className="space-y-0.5 max-h-[120px] overflow-y-auto sidebar-scroll">
-                {incomingLabels.slice(0, 20).map((l) => (
-                  <li key={l} className="text-text-secondary truncate text-[11px]">
-                    {l}
-                  </li>
+              <ul className="space-y-1 max-h-[140px] overflow-y-auto sidebar-scroll">
+                {incomingConnections.slice(0, 24).map((c) => (
+                  <ConnectionRow key={c.nodeId} connection={c} />
                 ))}
               </ul>
             </section>
@@ -238,6 +238,27 @@ export function NodeInspector() {
         </div>
       </motion.aside>
     </AnimatePresence>
+  )
+}
+
+function ConnectionRow({ connection }: { connection: NodeConnection }) {
+  const selectNodeInGraph = useGraphStore((s) => s.selectNodeInGraph)
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => selectNodeInGraph(connection.nodeId)}
+        className="w-full text-left px-2 py-1.5 rounded-md border border-border-subtle/60 bg-surface-overlay/40 hover:bg-surface-muted transition-colors"
+      >
+        <p className="text-[11px] text-text-primary truncate font-medium">{connection.label}</p>
+        <p className="text-[9px] text-accent/90 mt-0.5">{connection.relationship}</p>
+        {connection.importSource && (
+          <p className="text-[9px] text-text-muted truncate mt-0.5 font-mono">
+            {connection.importSource}
+          </p>
+        )}
+      </button>
+    </li>
   )
 }
 

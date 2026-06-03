@@ -10,11 +10,15 @@ const NODE_ITEMS = [
 ]
 
 const EDGE_ITEMS = [
-  { color: 'rgba(255,255,255,0.26)', label: 'Import', dashed: false },
-  { color: 'rgba(167,139,250,0.45)', label: 'Component use', dashed: false },
-  { color: 'rgba(168,85,247,0.5)', label: 'Dynamic import', dashed: true },
-  { color: 'rgba(113,113,122,0.4)', label: 'Folder link', dashed: true },
-  { color: 'rgba(45,212,191,0.55)', label: 'Focused', dashed: false }
+  { color: 'rgba(255,255,255,0.32)', label: 'Import', dashed: false },
+  { color: 'rgba(245,158,11,0.55)', label: 'Entry link', dashed: false },
+  { color: 'rgba(52,211,153,0.55)', label: 'Service use', dashed: false },
+  { color: 'rgba(113,113,122,0.55)', label: 'Utility', dashed: true },
+  { color: 'rgba(167,139,250,0.5)', label: 'Component use', dashed: false },
+  { color: 'rgba(168,85,247,0.55)', label: 'Dynamic import', dashed: true },
+  { color: 'rgba(113,113,122,0.45)', label: 'Folder link', dashed: true },
+  { color: 'rgba(113,113,122,0.28)', label: 'Contains', dashed: true },
+  { color: 'rgba(45,212,191,0.65)', label: 'Focused', dashed: false }
 ]
 
 export function GraphLegend() {
@@ -28,7 +32,7 @@ export function GraphLegend() {
     <motion.div
       initial={{ opacity: 0, x: -8 }}
       animate={{ opacity: 1, x: 0 }}
-      className="absolute top-4 left-4 z-20 max-w-[200px]"
+      className="absolute top-4 left-4 z-20 max-w-[210px]"
     >
       <div className="rounded-xl border border-border-subtle bg-surface-overlay/75 backdrop-blur-md shadow-panel overflow-hidden">
         <button

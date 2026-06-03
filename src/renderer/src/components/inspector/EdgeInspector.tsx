@@ -23,7 +23,7 @@ export function EdgeInspector() {
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 8, scale: 0.98 }}
         transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-        className="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 w-[min(420px,90vw)] rounded-xl border border-border-subtle bg-surface-overlay/95 backdrop-blur-xl shadow-panel p-4"
+        className="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 w-[min(420px,90vw)] rounded-xl border border-border-subtle bg-surface-overlay/95 shadow-panel p-4"
       >
         <motion.div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex items-center gap-2 text-accent">

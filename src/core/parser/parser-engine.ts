@@ -5,8 +5,10 @@ import traverseModule from '@babel/traverse'
 const traverse = (traverseModule as unknown as { default?: typeof traverseModule }).default ?? traverseModule
 import * as t from '@babel/types'
 import type { ParseResult, ScannedFile } from '../types'
+import { isMetadataFile } from '../utils/project-files'
 import {
   extractImportsForFile,
+  extractPackageName,
   isBabelParsableExtension
 } from './import-extractors'
 
@@ -30,6 +32,10 @@ export class ParserEngine {
     }
 
     if (content.length > 500_000) return null
+
+    if (isMetadataFile(file.relativePath)) {
+      return this.parseMetadataFile(file)
+    }
 
     if (!isBabelParsableExtension(file.extension)) {
       return this.parseWithImportExtractor(file, content)
@@ -184,8 +190,21 @@ export class ParserEngine {
     return false
   }
 
+  private parseMetadataFile(file: ScannedFile): ParseResult {
+    return {
+      filePath: file.absolutePath,
+      relativePath: file.relativePath,
+      imports: [],
+      exports: [],
+      functions: [],
+      components: [],
+      isComponentFile: false
+    }
+  }
+
   private parseWithImportExtractor(file: ScannedFile, content: string): ParseResult {
     const imports = extractImportsForFile(file, content)
+    const packageName = extractPackageName(file, content)
     const isComponent =
       file.extension === '.tsx' ||
       file.extension === '.jsx' ||
@@ -199,7 +218,8 @@ export class ParserEngine {
       exports: [],
       functions: [],
       components: [],
-      isComponentFile: isComponent
+      isComponentFile: isComponent,
+      packageName
     }
   }
 

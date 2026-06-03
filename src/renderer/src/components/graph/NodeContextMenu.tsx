@@ -73,7 +73,7 @@ export function NodeContextMenu({ x, y, nodeId, onClose }: NodeContextMenuProps)
       exit={{ opacity: 0, scale: 0.96 }}
       transition={{ duration: 0.12 }}
       style={{ position: 'fixed', top: y, left: x, zIndex: 10000 }}
-      className="min-w-[180px] py-1 rounded-xl border border-border-subtle bg-surface-overlay/95 backdrop-blur-xl shadow-panel titlebar-no-drag"
+      className="min-w-[180px] py-1 rounded-xl border border-border-subtle bg-surface-overlay shadow-panel titlebar-no-drag"
     >
       {items.map(({ icon: Icon, label, action }) => (
         <button

@@ -13,7 +13,7 @@ export function GraphToolbar({ onRelayout }: GraphToolbarProps) {
   if (!snapshot) return null
 
   return (
-    <div className="absolute top-4 right-4 flex items-center gap-1 p-1 rounded-xl bg-surface-overlay/90 border border-border-subtle backdrop-blur-md z-10">
+    <div className="absolute top-4 right-4 flex items-center gap-1 p-1 rounded-xl bg-surface-overlay/90 border border-border-subtle bg-surface-overlay/95 z-10">
       <button
         onClick={() => zoomIn({ duration: 200 })}
         className="p-2 rounded-lg hover:bg-surface-muted text-text-muted hover:text-text-primary transition-colors"

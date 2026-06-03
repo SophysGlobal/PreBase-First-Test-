@@ -4,20 +4,29 @@ import {
   computePyramidLayout,
   computeScatterLayout
 } from './hierarchy-layout'
+import { mergeLayoutRuntime, type LayoutRuntimeConfig } from './layout-config'
 
 export interface LayoutOptions {
   mode?: LayoutMode
   preservePositions?: Record<string, LayoutPosition>
   entryNodeId?: string | null
+  runtime?: Partial<LayoutRuntimeConfig>
 }
 
 export class LayoutEngine {
+  private lastMode: LayoutMode = 'hierarchy'
+  private lastRuntime: LayoutRuntimeConfig = mergeLayoutRuntime()
+
   async layout(
     nodes: GraphNode[],
     edges: GraphEdge[],
     options: LayoutOptions = {}
   ): Promise<Record<string, LayoutPosition>> {
     const mode = options.mode ?? 'hierarchy'
+    const runtime = mergeLayoutRuntime(options.runtime)
+    this.lastMode = mode
+    this.lastRuntime = runtime
+
     const layoutNodes = nodes.filter((n) => n.kind !== 'folder')
     if (layoutNodes.length === 0) return {}
 
@@ -26,17 +35,18 @@ export class LayoutEngine {
       return this.mergePreserved({}, nodes, options.preservePositions)
     }
 
+    const layoutOpts = { entryNodeId, runtime }
     let positions: Record<string, LayoutPosition>
     switch (mode) {
       case 'pyramid':
-        positions = computePyramidLayout(layoutNodes, edges, { entryNodeId })
+        positions = computePyramidLayout(layoutNodes, edges, layoutOpts)
         break
       case 'scattered':
-        positions = computeScatterLayout(layoutNodes, edges, { entryNodeId })
+        positions = computeScatterLayout(layoutNodes, edges, layoutOpts)
         break
       case 'hierarchy':
       default:
-        positions = computeHierarchyLayout(layoutNodes, edges, { entryNodeId })
+        positions = computeHierarchyLayout(layoutNodes, edges, layoutOpts)
         break
     }
 
@@ -48,14 +58,31 @@ export class LayoutEngine {
     edges: GraphEdge[],
     existingPositions: Record<string, LayoutPosition>,
     changedNodeIds: string[],
-    entryNodeId?: string | null
+    entryNodeId?: string | null,
+    mode?: LayoutMode,
+    runtime?: Partial<LayoutRuntimeConfig>
   ): Promise<Record<string, LayoutPosition>> {
     const changed = new Set(changedNodeIds)
     const hasNewNodes = nodes.some((n) => changed.has(n.id) || !existingPositions[n.id])
 
     if (hasNewNodes && entryNodeId) {
+      const layoutMode = mode ?? this.lastMode
+      const layoutRuntime = mergeLayoutRuntime(runtime ?? this.lastRuntime)
       const layoutNodes = nodes.filter((n) => n.kind !== 'folder')
-      const fresh = computeHierarchyLayout(layoutNodes, edges, { entryNodeId })
+      const layoutOpts = { entryNodeId, runtime: layoutRuntime }
+
+      let fresh: Record<string, LayoutPosition>
+      switch (layoutMode) {
+        case 'pyramid':
+          fresh = computePyramidLayout(layoutNodes, edges, layoutOpts)
+          break
+        case 'scattered':
+          fresh = computeScatterLayout(layoutNodes, edges, layoutOpts)
+          break
+        default:
+          fresh = computeHierarchyLayout(layoutNodes, edges, layoutOpts)
+      }
+
       for (const id of Object.keys(existingPositions)) {
         if (!changed.has(id) && existingPositions[id]) {
           fresh[id] = existingPositions[id]

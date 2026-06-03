@@ -13,6 +13,7 @@ import type { GraphNode, GraphSnapshot } from '../../../../core/types'
 import { useGraphStore } from '../../state/graph-store'
 import { buildFileTree } from '../../utils/graph-metadata'
 import { CollapsibleSidebar } from '../layout/CollapsibleSidebar'
+import { LanguageCompositionBar } from '../shared/LanguageCompositionBar'
 import { toProjectRelativePath } from '../../utils/path-utils'
 
 interface CodeExplorerSidebarProps {
@@ -21,7 +22,7 @@ interface CodeExplorerSidebarProps {
 
 function isReadableFile(node: GraphNode, projectPath: string): boolean {
   if (!node.path) return false
-  if (node.kind !== 'file' && node.kind !== 'component' && node.kind !== 'module') return false
+  if (node.kind !== 'file' && node.kind !== 'component') return false
   return toProjectRelativePath(projectPath, node.path) !== null
 }
 
@@ -386,6 +387,8 @@ export function CodeExplorerSidebar({ onOpenProject }: CodeExplorerSidebarProps)
             className="w-full px-2.5 py-1.5 text-xs rounded-md bg-surface-overlay border border-border-subtle text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent/40 transition-colors"
           />
         </div>
+
+        {snapshot && <LanguageCompositionBar nodes={snapshot.nodes} />}
 
         {/* File list / tree */}
         <div className="flex-1 overflow-y-auto sidebar-scroll p-1.5 pb-4">
