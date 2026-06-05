@@ -1,65 +1,88 @@
 import { useCallback, useMemo, useRef } from 'react'
-import { clampPitch, type Rotation3D } from '../utils/network-rotation'
+import {
+  IDENTITY_ORIENTATION,
+  mapScreenDragToArcball,
+  quatFromAxisAngle,
+  quatMultiply,
+  type Orientation3D
+} from '../utils/network-rotation'
 import { debugNetworkDrag } from '../utils/graph-debug'
 
-const DAMPING = 0.88
-const MAX_VELOCITY = 0.09
-const STOP_EPSILON = 0.00025
-/** Radians per pixel — horizontal drag → yaw, vertical drag → pitch. */
-const ROT_SENSITIVITY = 0.0045
+const DAMPING = 0.878
+const MAX_ANGULAR_VEL = 0.062
+const STOP_EPSILON = 0.0001
+const ROT_SENSITIVITY = 1
+const DRAG_THRESHOLD = 2
+
+export type NetworkDragDirection = 'natural' | 'inverted'
 
 export interface OrbitAttachOptions {
-  /** Called synchronously on every rotation change (drag + momentum). */
-  onRotate?: (rotation: Rotation3D) => void
-  /** Called once when an empty-space rotation drag is confirmed. */
+  onRotate?: (orientation: Orientation3D) => void
+  onArm?: () => void
   onDragStart?: () => void
-  /** Called when drag/momentum fully stops. */
-  onDragEnd?: () => void
+  onDragEnd?: (lastAngular: { ax: number; ay: number; az: number; angle: number }) => void
+  isPointerOverNode?: (clientX: number, clientY: number) => boolean
+  dragDirection?: NetworkDragDirection
 }
 
 export interface OrbitStep {
-  rotation: Rotation3D
+  orientation: Orientation3D
   moving: boolean
+  lastAngular: { ax: number; ay: number; az: number; angle: number }
 }
 
-/**
- * Trackball-style 3D orbit for the network graph.
- * Horizontal drag → yaw (Y axis). Vertical drag → pitch (X axis).
- * Updates fire synchronously on pointermove; RAF handles post-release inertia only.
- */
 export function useNetworkOrbit(reduceMotion: boolean) {
-  const rotationRef = useRef<Rotation3D>({ yaw: 0, pitch: 0 })
-  const velRef = useRef({ yaw: 0, pitch: 0 })
+  const orientationRef = useRef<Orientation3D>({ ...IDENTITY_ORIENTATION })
+  const angularVelRef = useRef({ ax: 0, ay: 0, az: 0, angle: 0 })
+  const lastAngularRef = useRef({ ax: 0, ay: 0, az: 0, angle: 0 })
 
   const draggingRef = useRef(false)
   const armedRef = useRef(false)
+  const didRotateRef = useRef(false)
   const lastPtrRef = useRef({ x: 0, y: 0 })
-  const hoveredNodeRef = useRef(false)
   const movedRef = useRef(0)
   const activePointerIdRef = useRef<number | null>(null)
+  const captureTargetRef = useRef<HTMLElement | null>(null)
+  const viewportRef = useRef<DOMRect | null>(null)
   const optionsRef = useRef<OrbitAttachOptions>({})
-
-  const DRAG_THRESHOLD = 2
 
   const setAttachOptions = useCallback((opts: OrbitAttachOptions) => {
     optionsRef.current = opts
   }, [])
 
-  const setHovered = useCallback((hovered: boolean) => {
-    hoveredNodeRef.current = hovered
+  const emitRotate = useCallback((orientation: Orientation3D) => {
+    optionsRef.current.onRotate?.(orientation)
   }, [])
 
-  const emitRotate = useCallback((rotation: Rotation3D) => {
-    optionsRef.current.onRotate?.(rotation)
+  const releaseCapture = useCallback(() => {
+    const target = captureTargetRef.current
+    if (target?.hasPointerCapture(activePointerIdRef.current ?? -1)) {
+      try {
+        target.releasePointerCapture(activePointerIdRef.current!)
+      } catch {
+        /* already released */
+      }
+    }
+    captureTargetRef.current = null
   }, [])
 
   const attach = useCallback(
     (root: HTMLElement | null) => {
       if (!root) return undefined
 
-      const isCanvasTarget = (target: EventTarget | null) => {
-        if (!(target instanceof Element)) return false
-        return target.tagName === 'CANVAS' && root.contains(target)
+      const viewportRect = () => {
+        viewportRef.current = root.getBoundingClientRect()
+        return viewportRef.current
+      }
+
+      const pointerInViewport = (clientX: number, clientY: number) => {
+        const rect = viewportRect()
+        return (
+          clientX >= rect.left &&
+          clientX <= rect.right &&
+          clientY >= rect.top &&
+          clientY <= rect.bottom
+        )
       }
 
       const clearWindowListeners = () => {
@@ -68,19 +91,26 @@ export function useNetworkOrbit(reduceMotion: boolean) {
         window.removeEventListener('pointercancel', onWindowPointerUp, true)
       }
 
-      const applyRotateDelta = (deltaYaw: number, deltaPitch: number) => {
-        if (deltaYaw === 0 && deltaPitch === 0) return
-        const next = {
-          yaw: rotationRef.current.yaw + deltaYaw,
-          pitch: clampPitch(rotationRef.current.pitch + deltaPitch)
+      const applyArcballDelta = (dx: number, dy: number) => {
+        const rect = viewportRef.current ?? viewportRect()
+        if (!rect.width || !rect.height) return
+        const inverted = optionsRef.current.dragDirection === 'natural'
+        const deltaQ = mapScreenDragToArcball(dx, dy, rect, ROT_SENSITIVITY, inverted)
+        orientationRef.current = quatMultiply(deltaQ, orientationRef.current)
+        const ax = deltaQ.x
+        const ay = deltaQ.y
+        const az = deltaQ.z
+        const angle = 2 * Math.acos(Math.min(1, Math.abs(deltaQ.w)))
+        lastAngularRef.current = { ax, ay, az, angle }
+        angularVelRef.current = {
+          ax: Math.max(-MAX_ANGULAR_VEL, Math.min(MAX_ANGULAR_VEL, ax * angle * 8)),
+          ay: Math.max(-MAX_ANGULAR_VEL, Math.min(MAX_ANGULAR_VEL, ay * angle * 8)),
+          az: Math.max(-MAX_ANGULAR_VEL, Math.min(MAX_ANGULAR_VEL, az * angle * 8)),
+          angle: Math.max(-MAX_ANGULAR_VEL, Math.min(MAX_ANGULAR_VEL, angle * 8))
         }
-        rotationRef.current = next
-        velRef.current = {
-          yaw: Math.max(-MAX_VELOCITY, Math.min(MAX_VELOCITY, deltaYaw)),
-          pitch: Math.max(-MAX_VELOCITY, Math.min(MAX_VELOCITY, deltaPitch))
-        }
-        emitRotate(next)
-        debugNetworkDrag({ deltaYaw, deltaPitch, ...next, dragging: true })
+        didRotateRef.current = true
+        emitRotate(orientationRef.current)
+        debugNetworkDrag({ ax, ay, az, angle, dragging: true })
       }
 
       const onPointerMove = (e: PointerEvent) => {
@@ -100,107 +130,138 @@ export function useNetworkOrbit(reduceMotion: boolean) {
           optionsRef.current.onDragStart?.()
         }
 
-        applyRotateDelta(dx * ROT_SENSITIVITY, dy * ROT_SENSITIVITY)
+        applyArcballDelta(dx, dy)
       }
 
       const onWindowPointerMove = (e: PointerEvent) => onPointerMove(e)
 
-      const finishGesture = (e: PointerEvent) => {
-        if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) {
-          return
-        }
+      const finishGesture = () => {
         armedRef.current = false
         draggingRef.current = false
         activePointerIdRef.current = null
+        releaseCapture()
         clearWindowListeners()
       }
 
-      const onWindowPointerUp = (e: PointerEvent) => finishGesture(e)
+      const onWindowPointerUp = (e: PointerEvent) => {
+        if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) {
+          return
+        }
+        finishGesture()
+      }
 
       const onPointerDown = (e: PointerEvent) => {
-        if (!isCanvasTarget(e.target)) return
-        if (hoveredNodeRef.current) return
         if (e.button !== 0) return
+        if (!pointerInViewport(e.clientX, e.clientY)) return
+
+        didRotateRef.current = false
+        if (optionsRef.current.isPointerOverNode?.(e.clientX, e.clientY)) return
 
         movedRef.current = 0
         activePointerIdRef.current = e.pointerId
-        velRef.current = { yaw: 0, pitch: 0 }
+        angularVelRef.current = { ax: 0, ay: 0, az: 0, angle: 0 }
+        lastAngularRef.current = { ax: 0, ay: 0, az: 0, angle: 0 }
         armedRef.current = true
         lastPtrRef.current = { x: e.clientX, y: e.clientY }
+        viewportRect()
+
+        optionsRef.current.onArm?.()
+
+        try {
+          root.setPointerCapture(e.pointerId)
+          captureTargetRef.current = root
+        } catch {
+          /* window listeners still handle move */
+        }
 
         clearWindowListeners()
         window.addEventListener('pointermove', onWindowPointerMove, true)
         window.addEventListener('pointerup', onWindowPointerUp, true)
         window.addEventListener('pointercancel', onWindowPointerUp, true)
-
-        debugNetworkDrag({ event: 'pointerdown', target: (e.target as Element)?.tagName })
       }
 
-      const onContextMenu = (ev: Event) => ev.preventDefault()
-
       root.addEventListener('pointerdown', onPointerDown, { capture: true })
-      root.addEventListener('contextmenu', onContextMenu)
+      root.addEventListener('contextmenu', (ev) => ev.preventDefault())
 
       return () => {
         clearWindowListeners()
+        releaseCapture()
         root.removeEventListener('pointerdown', onPointerDown, { capture: true })
-        root.removeEventListener('contextmenu', onContextMenu)
       }
     },
-    [emitRotate]
+    [emitRotate, releaseCapture]
   )
 
-  /** Momentum integration — only runs when NOT actively dragging. */
   const step = useCallback((): OrbitStep => {
     if (draggingRef.current) {
-      return { rotation: rotationRef.current, moving: true }
+      return {
+        orientation: orientationRef.current,
+        moving: true,
+        lastAngular: lastAngularRef.current
+      }
     }
 
+    const av = angularVelRef.current
     if (
       !reduceMotion &&
-      (Math.abs(velRef.current.yaw) > STOP_EPSILON || Math.abs(velRef.current.pitch) > STOP_EPSILON)
+      (Math.abs(av.ax) > STOP_EPSILON ||
+        Math.abs(av.ay) > STOP_EPSILON ||
+        Math.abs(av.az) > STOP_EPSILON ||
+        Math.abs(av.angle) > STOP_EPSILON)
     ) {
-      const next = {
-        yaw: rotationRef.current.yaw + velRef.current.yaw,
-        pitch: clampPitch(rotationRef.current.pitch + velRef.current.pitch)
+      const deltaQ = quatFromAxisAngle(av.ax, av.ay, av.az, av.angle)
+      orientationRef.current = quatMultiply(deltaQ, orientationRef.current)
+      emitRotate(orientationRef.current)
+      av.ax *= DAMPING
+      av.ay *= DAMPING
+      av.az *= DAMPING
+      av.angle *= DAMPING
+      if (Math.abs(av.angle) < STOP_EPSILON) {
+        av.ax = 0
+        av.ay = 0
+        av.az = 0
+        av.angle = 0
       }
-      rotationRef.current = next
-      emitRotate(next)
-      velRef.current = {
-        yaw: velRef.current.yaw * DAMPING,
-        pitch: velRef.current.pitch * DAMPING
-      }
-      velRef.current.yaw = Math.max(-MAX_VELOCITY, Math.min(MAX_VELOCITY, velRef.current.yaw))
-      velRef.current.pitch = Math.max(-MAX_VELOCITY, Math.min(MAX_VELOCITY, velRef.current.pitch))
-      if (Math.abs(velRef.current.yaw) < STOP_EPSILON) velRef.current.yaw = 0
-      if (Math.abs(velRef.current.pitch) < STOP_EPSILON) velRef.current.pitch = 0
-    } else if (velRef.current.yaw !== 0 || velRef.current.pitch !== 0) {
-      velRef.current = { yaw: 0, pitch: 0 }
-      optionsRef.current.onDragEnd?.()
+    } else if (av.ax !== 0 || av.ay !== 0 || av.az !== 0 || av.angle !== 0) {
+      angularVelRef.current = { ax: 0, ay: 0, az: 0, angle: 0 }
+      optionsRef.current.onDragEnd?.({ ...lastAngularRef.current })
     }
 
     const moving =
       draggingRef.current ||
-      Math.abs(velRef.current.yaw) > STOP_EPSILON ||
-      Math.abs(velRef.current.pitch) > STOP_EPSILON
+      Math.abs(av.ax) > STOP_EPSILON ||
+      Math.abs(av.ay) > STOP_EPSILON ||
+      Math.abs(av.az) > STOP_EPSILON ||
+      Math.abs(av.angle) > STOP_EPSILON
 
-    return { rotation: rotationRef.current, moving }
+    return {
+      orientation: orientationRef.current,
+      moving,
+      lastAngular: lastAngularRef.current
+    }
   }, [reduceMotion, emitRotate])
 
   const isDragging = useCallback(() => draggingRef.current, [])
-  const consumedDrag = useCallback(() => movedRef.current > DRAG_THRESHOLD, [])
-
-  const reset = useCallback(() => {
-    rotationRef.current = { yaw: 0, pitch: 0 }
-    velRef.current = { yaw: 0, pitch: 0 }
-    draggingRef.current = false
-    armedRef.current = false
-    activePointerIdRef.current = null
-    movedRef.current = 0
+  const consumedDrag = useCallback(() => {
+    const consumed = didRotateRef.current
+    didRotateRef.current = false
+    return consumed
   }, [])
 
+  const reset = useCallback(() => {
+    orientationRef.current = { ...IDENTITY_ORIENTATION }
+    angularVelRef.current = { ax: 0, ay: 0, az: 0, angle: 0 }
+    lastAngularRef.current = { ax: 0, ay: 0, az: 0, angle: 0 }
+    draggingRef.current = false
+    armedRef.current = false
+    didRotateRef.current = false
+    activePointerIdRef.current = null
+    movedRef.current = 0
+    releaseCapture()
+  }, [releaseCapture])
+
   return useMemo(
-    () => ({ attach, step, setAttachOptions, setHovered, isDragging, consumedDrag, reset }),
-    [attach, step, setAttachOptions, setHovered, isDragging, consumedDrag, reset]
+    () => ({ attach, step, setAttachOptions, isDragging, consumedDrag, reset }),
+    [attach, step, setAttachOptions, isDragging, consumedDrag, reset]
   )
 }

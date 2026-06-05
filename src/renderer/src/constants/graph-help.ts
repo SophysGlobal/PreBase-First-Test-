@@ -7,11 +7,11 @@ export const LAYOUT_MODE_HELP: Record<LayoutMode, { title: string; body: string 
   },
   pyramid: {
     title: 'Pyramid',
-    body: 'Vertical dependency tiers with compact row spacing. Entry at top, deeper imports cascade downward.'
+    body: 'Root at top center with each dependency tier on wider rows below — a true pyramid shape.'
   },
   scattered: {
     title: 'Scattered',
-    body: 'Compact exploratory layout with controlled radial spread. Related systems stay reachable without extreme panning.'
+    body: 'Organic spread with depth-based bands — exploratory without rings or strict tiers.'
   }
 }
 

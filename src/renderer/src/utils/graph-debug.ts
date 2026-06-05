@@ -40,6 +40,34 @@ export function debugTilePressure(context: string, data: Record<string, unknown>
   if (typeof window === 'undefined') return
   if (window.localStorage.getItem('prebase:graph-debug') !== '1') return
   tileWarnCount++
-  if (tileWarnCount % 8 !== 0) return
-  console.debug(`[GraphDebug:tile-pressure] ${context}`, data)
+  if (tileWarnCount % 6 !== 0) return
+  console.debug(`[GraphDebug:tile-pressure] ${context}`, {
+    ...data,
+    tileSamples: tileWarnCount
+  })
+}
+
+export function debugGraphBounds(
+  label: string,
+  positions: Array<{ x: number; y: number }>
+): void {
+  if (typeof window === 'undefined') return
+  if (window.localStorage.getItem('prebase:graph-debug') !== '1') return
+  if (positions.length === 0) return
+  let minX = Infinity
+  let maxX = -Infinity
+  let minY = Infinity
+  let maxY = -Infinity
+  for (const p of positions) {
+    minX = Math.min(minX, p.x)
+    maxX = Math.max(maxX, p.x)
+    minY = Math.min(minY, p.y)
+    maxY = Math.max(maxY, p.y)
+  }
+  console.debug(`[GraphDebug:bounds:${label}]`, {
+    nodes: positions.length,
+    width: Math.round(maxX - minX),
+    height: Math.round(maxY - minY),
+    maxExtent: Math.round(Math.max(Math.abs(minX), Math.abs(maxX), Math.abs(minY), Math.abs(maxY)))
+  })
 }

@@ -99,7 +99,7 @@ export interface FlowAdapterOptions {
   architectureMode?: ArchitectureMode
 }
 
-function getNeighborhood(snapshot: GraphSnapshot, nodeId: string, hops: number): Set<string> {
+export function getNeighborhood(snapshot: GraphSnapshot, nodeId: string, hops: number): Set<string> {
   const set = new Set<string>([nodeId])
   let frontier = [nodeId]
   for (let h = 0; h < hops; h++) {
@@ -159,9 +159,9 @@ function classifyEdgeVariant(
   return 'import'
 }
 
-const FLOW_NODE_WIDTH = 168
-const FLOW_NODE_HEIGHT = 52
-const FLOW_ENTRY_HEIGHT = 58
+export const FLOW_NODE_WIDTH = 64
+export const FLOW_NODE_HEIGHT = 62
+export const FLOW_ENTRY_HEIGHT = 66
 
 const EDGE_STYLES: Record<
   EdgeVisualVariant,
@@ -177,6 +177,33 @@ const EDGE_STYLES: Record<
   contains: { stroke: 'rgba(113,113,122,0.28)', strokeWidth: 0.85, opacity: 0.65, dashed: true },
   highlighted: { stroke: 'rgba(45,212,191,0.65)', strokeWidth: 1.35, opacity: 1 },
   selected: { stroke: 'rgba(245,158,11,0.95)', strokeWidth: 1.75, opacity: 1 }
+}
+
+export function styleForGraphEdge(
+  edge: GraphEdge,
+  snapshot: GraphSnapshot,
+  focusId: string | null,
+  selectedEdgeId: string | null
+): {
+  variant: EdgeVisualVariant
+  stroke: string
+  strokeWidth: number
+  opacity: number
+  dashed?: boolean
+} {
+  const highlightIds = new Set<string>()
+  if (focusId) {
+    getConnectedIds(snapshot, focusId).forEach((id) => highlightIds.add(id))
+    highlightIds.add(focusId)
+  }
+  const variant = classifyEdgeVariant(
+    edge,
+    snapshot,
+    focusId,
+    highlightIds,
+    edge.id === selectedEdgeId
+  )
+  return { variant, ...EDGE_STYLES[variant] }
 }
 
 function buildRadialOverrides(

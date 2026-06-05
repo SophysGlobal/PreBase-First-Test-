@@ -3,6 +3,7 @@ import { useSettingsStore } from '../../state/settings-store'
 import { useNetworkControls } from '../../state/network-controls-store'
 import { InfoTooltip } from '../ui/InfoTooltip'
 import { VISIBLE_RELATED_CONNECTIONS_HELP } from '../../constants/graph-help'
+import { NETWORK_LAYOUT_OPTIONS } from '../../utils/network-layout'
 
 function Slider({
   label,
@@ -42,13 +43,12 @@ function Slider({
   )
 }
 
-/** Sidebar controls shown only in Network graph mode (Issue: settings live in sidebar). */
+/** Sidebar controls shown only in Network graph mode. */
 export function NetworkGraphSidebarPanel() {
   const visibleRelatedConnections = useSettingsStore((s) => s.visibleRelatedConnections)
   const setVisibleRelatedConnections = useSettingsStore((s) => s.setVisibleRelatedConnections)
   const edgeOpacity = useSettingsStore((s) => s.networkEdgeOpacity)
   const setEdgeOpacity = useSettingsStore((s) => s.setNetworkEdgeOpacity)
-
   const c = useNetworkControls()
 
   return (
@@ -63,6 +63,27 @@ export function NetworkGraphSidebarPanel() {
           >
             <RotateCcw className="w-3 h-3" /> Reset view
           </button>
+        </div>
+
+        <div className="space-y-1 px-0.5">
+          <p className="text-[10px] uppercase tracking-wider text-text-muted">Layout</p>
+          <div className="grid grid-cols-2 gap-1">
+            {NETWORK_LAYOUT_OPTIONS.map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                title={opt.blurb}
+                onClick={() => c.set({ layoutMode: opt.id })}
+                className={`px-2 py-1 rounded-md text-[10px] font-medium text-left transition-colors ${
+                  c.layoutMode === opt.id
+                    ? 'bg-accent-soft text-accent'
+                    : 'bg-surface-overlay text-text-muted hover:text-text-secondary'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="space-y-1.5 px-0.5">
@@ -93,6 +114,15 @@ export function NetworkGraphSidebarPanel() {
 
       <div className="space-y-2 px-0.5">
         <p className="text-[10px] uppercase tracking-wider text-text-muted">Display</p>
+        <Slider
+          label="Node distance"
+          value={c.spreadScale}
+          min={0.75}
+          max={1.35}
+          step={0.05}
+          format={(v) => `${Math.round(v * 100)}%`}
+          onChange={(spreadScale) => c.set({ spreadScale })}
+        />
         <Slider
           label="Node size"
           value={c.nodeScale}
@@ -129,37 +159,6 @@ export function NetworkGraphSidebarPanel() {
             className="accent-teal-400"
           />
         </label>
-      </div>
-
-      <div className="space-y-2 px-0.5">
-        <p className="text-[10px] uppercase tracking-wider text-text-muted">Forces</p>
-        <Slider
-          label="Center pull"
-          value={c.centerForce}
-          min={0}
-          max={1}
-          step={0.05}
-          format={(v) => v.toFixed(2)}
-          onChange={(centerForce) => c.set({ centerForce })}
-        />
-        <Slider
-          label="Repulsion"
-          value={-c.repelForce}
-          min={20}
-          max={400}
-          step={10}
-          format={(v) => String(v)}
-          onChange={(v) => c.set({ repelForce: -v })}
-        />
-        <Slider
-          label="Link distance"
-          value={c.linkDistance}
-          min={20}
-          max={140}
-          step={5}
-          format={(v) => String(v)}
-          onChange={(linkDistance) => c.set({ linkDistance })}
-        />
       </div>
     </div>
   )

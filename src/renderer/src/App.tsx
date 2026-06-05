@@ -36,6 +36,11 @@ export default function App() {
   const setLayoutMode = useGraphStore((s) => s.setLayoutMode)
   const reset = useGraphStore((s) => s.reset)
 
+  useEffect(() => {
+    const settings = useSettingsStore.getState()
+    setLayoutMode(settings.defaultLayout)
+  }, [setLayoutMode])
+
   const handleOpenProject = useCallback(async () => {
     try {
       const path = await window.prebase.openProjectDialog()

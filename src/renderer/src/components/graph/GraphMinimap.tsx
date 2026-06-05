@@ -3,7 +3,7 @@ import { MiniMap, useNodes } from '@xyflow/react'
 import { useGraphStore } from '../../state/graph-store'
 import { useSettingsStore } from '../../state/settings-store'
 
-function GraphMinimapComponent({ hideWhileMoving }: { hideWhileMoving?: boolean }) {
+function GraphMinimapComponent() {
   const showMinimap = useGraphStore((s) => s.showMinimap)
   const graphQuality = useSettingsStore((s) => s.graphQuality)
   const nodes = useNodes()
@@ -13,8 +13,8 @@ function GraphMinimapComponent({ hideWhileMoving }: { hideWhileMoving?: boolean 
     []
   )
 
-  if (!showMinimap || hideWhileMoving) return null
-  if (graphQuality === 'performance' || nodes.length > 180) return null
+  if (!showMinimap) return null
+  if (graphQuality === 'performance' || nodes.length > 45) return null
 
   return (
     <MiniMap

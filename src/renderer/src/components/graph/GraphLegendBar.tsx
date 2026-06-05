@@ -66,7 +66,7 @@ export function ArchitectureGraphLegend({ nodes }: { nodes: GraphNode[] }) {
   if (!showLegend) return null
 
   return (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[18] pointer-events-none px-3 w-full flex justify-center">
+    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[18] pointer-events-none px-3 w-full flex justify-center graph-legend-overlay">
       <LegendShell
         title="Architecture"
         collapsed={collapsed}
@@ -97,7 +97,7 @@ export function NetworkGraphLegend({ nodes }: { nodes: GraphNode[] }) {
   if (!showLegend) return null
 
   return (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[18] pointer-events-none px-3 w-full flex justify-center">
+    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[18] pointer-events-none px-3 w-full flex justify-center graph-legend-overlay">
       <LegendShell
         title="Network"
         collapsed={collapsed}

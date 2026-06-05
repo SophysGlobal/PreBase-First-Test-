@@ -199,7 +199,21 @@ a,
   pointer-events: none;
 }
 
-/* While zooming/panning: lighter edge paint + hide expensive hierarchy rings. */
+/* While zooming/panning: lighter edge paint; keep overlays visible to avoid flicker. */
+.graph-viewport-shell.is-zooming .hierarchy-labels-layer {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.graph-viewport-shell.is-zooming .react-flow__minimap {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.graph-viewport-shell.is-zooming .graph-legend-overlay {
+  pointer-events: none;
+}
+
 .graph-viewport-shell.is-zooming .react-flow__edge-path {
   opacity: 0.55;
   stroke-width: 1px !important;
@@ -211,6 +225,10 @@ a,
 
 .graph-viewport-shell.is-zooming .react-flow__node {
   transition: none !important;
+}
+
+.graph-viewport-shell.is-zooming .react-flow__node > div {
+  box-shadow: none !important;
 }
 
 [data-theme='light'] .graph-dot-surface {

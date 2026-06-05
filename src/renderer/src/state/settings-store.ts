@@ -7,6 +7,7 @@ export type ResolvedTheme = 'light' | 'dark'
 export type UiDensity = 'comfortable' | 'compact'
 export type GraphQuality = 'balanced' | 'performance'
 export type EditorWhitespace = 'none' | 'boundary' | 'selection' | 'all'
+export type LayoutSpacing = 'compact' | 'balanced' | 'spacious'
 
 export interface AppSettings {
   theme: ThemePreference
@@ -31,6 +32,8 @@ export interface AppSettings {
   layerGap: number
   centerClearance: number
   scatterRelaxIterations: number
+  /** Architecture graph node spacing preset. */
+  layoutSpacing: LayoutSpacing
   folderExpansionRadius: number
   edgeSimplificationThreshold: number
   /** Additional import edges per file beyond root connection (max 2). */
@@ -54,6 +57,8 @@ export interface AppSettings {
   networkLodNodeThreshold: number
   networkPhysicsStrength: number
   networkEdgeOpacity: number
+  /** Network graph empty-space rotation direction. */
+  networkDragDirection: 'natural' | 'inverted'
 }
 
 interface SettingsStore extends AppSettings {
@@ -77,6 +82,7 @@ interface SettingsStore extends AppSettings {
   setMaxNodesPerLayer: (value: number) => void
   setLayerGap: (value: number) => void
   setCenterClearance: (value: number) => void
+  setLayoutSpacing: (spacing: LayoutSpacing) => void
   setScatterRelaxIterations: (value: number) => void
   setFolderExpansionRadius: (value: number) => void
   setEdgeSimplificationThreshold: (value: number) => void
@@ -96,6 +102,7 @@ interface SettingsStore extends AppSettings {
   setNetworkLodNodeThreshold: (value: number) => void
   setNetworkPhysicsStrength: (value: number) => void
   setNetworkEdgeOpacity: (value: number) => void
+  setNetworkDragDirection: (value: 'natural' | 'inverted') => void
   resetSettings: () => void
 }
 
@@ -121,6 +128,7 @@ const defaults: AppSettings = {
   layerGap: 132,
   centerClearance: 108,
   scatterRelaxIterations: 10,
+  layoutSpacing: 'balanced',
   folderExpansionRadius: 82,
   edgeSimplificationThreshold: 0,
   visibleRelatedConnections: 2,
@@ -138,7 +146,8 @@ const defaults: AppSettings = {
   networkSimulationTicks: 80,
   networkLodNodeThreshold: 900,
   networkPhysicsStrength: 1,
-  networkEdgeOpacity: 0.55
+  networkEdgeOpacity: 0.55,
+  networkDragDirection: 'natural'
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -166,6 +175,7 @@ export const useSettingsStore = create<SettingsStore>()(
       setLayerGap: (layerGap) => set({ layerGap }),
       setCenterClearance: (centerClearance) => set({ centerClearance }),
       setScatterRelaxIterations: (scatterRelaxIterations) => set({ scatterRelaxIterations }),
+      setLayoutSpacing: (layoutSpacing) => set({ layoutSpacing }),
       setFolderExpansionRadius: (folderExpansionRadius) => set({ folderExpansionRadius }),
       setEdgeSimplificationThreshold: (edgeSimplificationThreshold) =>
         set({ edgeSimplificationThreshold }),
@@ -189,10 +199,11 @@ export const useSettingsStore = create<SettingsStore>()(
       setNetworkLodNodeThreshold: (networkLodNodeThreshold) => set({ networkLodNodeThreshold }),
       setNetworkPhysicsStrength: (networkPhysicsStrength) => set({ networkPhysicsStrength }),
       setNetworkEdgeOpacity: (networkEdgeOpacity) => set({ networkEdgeOpacity }),
+      setNetworkDragDirection: (networkDragDirection) => set({ networkDragDirection }),
       resetSettings: () => set({ ...defaults })
     }),
     {
-      name: 'prebase-settings-v6',
+      name: 'prebase-settings-v7',
       migrate: (persisted) => {
         const state = { ...defaults, ...(persisted as Partial<AppSettings>) }
         // P0 fix: edge simplification hid all import edges for many users
@@ -242,6 +253,8 @@ export const useSettingsStore = create<SettingsStore>()(
         if (state.networkLodNodeThreshold === undefined) state.networkLodNodeThreshold = 900
         if (state.networkPhysicsStrength === undefined) state.networkPhysicsStrength = 1
         if (state.networkEdgeOpacity === undefined) state.networkEdgeOpacity = 0.55
+        if (state.networkDragDirection === undefined) state.networkDragDirection = 'natural'
+        if (state.layoutSpacing === undefined) state.layoutSpacing = 'balanced'
         return state
       }
     }

@@ -35,6 +35,7 @@ import {
   LAYOUT_MODE_HELP,
   LAYOUT_PRESETS
 } from '../../constants/graph-help'
+import { useSettingsStore } from '../../state/settings-store'
 
 const filters: { id: FilterKind; label: string; icon: typeof FileCode }[] = [
   { id: 'all', label: 'All', icon: LayoutGrid },
@@ -75,13 +76,17 @@ function GraphControls({ onRelayout }: GraphSidebarProps) {
   const layoutModeValue = useGraphStore((s) => s.layoutMode)
   const setLayoutMode = useGraphStore((s) => s.setLayoutMode)
   const snapshot = useGraphStore((s) => s.snapshot)
+  const layoutSpacing = useSettingsStore((s) => s.layoutSpacing)
+  const setLayoutSpacing = useSettingsStore((s) => s.setLayoutSpacing)
+  const setDefaultLayout = useSettingsStore((s) => s.setDefaultLayout)
 
   const [layoutOpen, setLayoutOpen] = useState(false)
   const isNetwork = graphViewMode === 'network'
   const isOverview = !isNetwork && architectureMode === 'overview'
-  // Layout/organization controls only make sense for file & dependency slices.
+  const showArchLayout = !isNetwork && !isOverview
+  // Depth/organization controls only for file & dependency slices.
   const showStructureControls =
-    !isNetwork && (architectureMode === 'file' || architectureMode === 'dependency')
+    !isNetwork && !isOverview && (architectureMode === 'file' || architectureMode === 'dependency')
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -224,7 +229,7 @@ function GraphControls({ onRelayout }: GraphSidebarProps) {
         </div>
         )}
 
-        {showStructureControls && (
+        {showArchLayout && (
           <div className="border border-border-subtle rounded-lg overflow-hidden">
             <button
               type="button"
@@ -239,30 +244,63 @@ function GraphControls({ onRelayout }: GraphSidebarProps) {
               )}
             </button>
             {layoutOpen && (
-              <div className="px-2 pb-2 space-y-0.5">
-                {LAYOUT_PRESETS.map((mode) => (
-                  <div key={mode} className="flex items-center gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLayoutMode(mode)
-                        onRelayout(mode)
-                      }}
-                      className={`flex-1 px-2 py-1 rounded text-[10px] capitalize transition-colors text-left ${
-                        layoutModeValue === mode
-                          ? 'bg-accent-soft text-accent'
-                          : 'text-text-muted hover:bg-surface-muted'
-                      }`}
-                    >
-                      {mode}
-                    </button>
-                    <InfoTooltip
-                      title={LAYOUT_MODE_HELP[mode].title}
-                      body={LAYOUT_MODE_HELP[mode].body}
-                      side="right"
-                    />
+              <div className="px-2 pb-2 space-y-2">
+                <div className="space-y-0.5">
+                  {LAYOUT_PRESETS.map((mode) => (
+                    <div key={mode} className="flex items-center gap-0.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLayoutMode(mode)
+                          setDefaultLayout(mode)
+                          onRelayout(mode)
+                        }}
+                        className={`flex-1 px-2 py-1 rounded text-[10px] capitalize transition-colors text-left ${
+                          layoutModeValue === mode
+                            ? 'bg-accent-soft text-accent'
+                            : 'text-text-muted hover:bg-surface-muted'
+                        }`}
+                      >
+                        {mode}
+                      </button>
+                      <InfoTooltip
+                        title={LAYOUT_MODE_HELP[mode].title}
+                        body={LAYOUT_MODE_HELP[mode].body}
+                        side="right"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-1 pt-1 border-t border-border-subtle/60">
+                  <p className="text-[10px] uppercase tracking-wider text-text-muted px-0.5">
+                    Node spacing
+                  </p>
+                  <div className="flex gap-0.5 p-0.5 bg-surface-overlay rounded-lg border border-border-subtle">
+                    {(
+                      [
+                        { id: 'compact' as const, label: 'Compact' },
+                        { id: 'balanced' as const, label: 'Balanced' },
+                        { id: 'spacious' as const, label: 'Spacious' }
+                      ] as const
+                    ).map(({ id, label }) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => {
+                          setLayoutSpacing(id)
+                          onRelayout(layoutModeValue)
+                        }}
+                        className={`flex-1 py-1 rounded-md text-[10px] font-medium transition-colors ${
+                          layoutSpacing === id
+                            ? 'bg-accent-soft text-accent'
+                            : 'text-text-muted hover:text-text-secondary'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
                   </div>
-                ))}
+                </div>
               </div>
             )}
           </div>

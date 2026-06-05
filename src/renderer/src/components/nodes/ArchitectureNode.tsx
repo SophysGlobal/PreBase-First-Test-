@@ -1,6 +1,11 @@
 import { memo, useState } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { Box, ChevronRight, FileCode, Folder, FolderOpen, Layers, Star, Zap } from 'lucide-react'
+import {
+  FLOW_ENTRY_HEIGHT,
+  FLOW_NODE_HEIGHT,
+  FLOW_NODE_WIDTH
+} from '../../utils/flow-adapter'
 
 export interface ArchitectureNodeData {
   label: string
@@ -26,13 +31,6 @@ export interface ArchitectureNodeData {
   }
 }
 
-const NODE_WIDTH = 168
-const NODE_HEIGHT = 52
-const ENTRY_HEIGHT = 58
-
-// Four-sided handles so edges can attach to the side facing the connected node.
-// Each side carries both a source and a target handle (ids `s-<side>` / `t-<side>`);
-// the edge builder picks the pair based on relative node position.
 const SIDE_HANDLES = [
   { side: 'top', position: Position.Top },
   { side: 'right', position: Position.Right },
@@ -64,74 +62,71 @@ function ArchitectureNodeComponent({ data, selected: rfSelected }: NodeProps) {
       : (kindIcons[d.kind] ?? FileCode)
 
   const opacity = d.dimmed ? 0.6 : d.softDimmed ? 0.82 : 1
+  const nodeHeight = d.isEntry ? FLOW_ENTRY_HEIGHT : FLOW_NODE_HEIGHT
 
-  // LOD shadows: blurred/glowing shadows are expensive to composite and, applied
-  // to every node, exhaust raster tile memory. Reserve blur for the few emphasized
-  // states (selected / search / entry / hover); the common default uses a flat,
-  // blur-free ring so hundreds of nodes stay cheap to paint.
   let boxShadow: string
   if (isSelected) {
-    boxShadow = '0 0 0 2px rgba(45,212,191,0.75), 0 4px 14px rgba(0,0,0,0.24)'
+    boxShadow = '0 0 0 2px rgba(45,212,191,0.7)'
   } else if (hovered) {
-    boxShadow = '0 0 0 1px rgba(45,212,191,0.42)'
+    boxShadow = '0 0 0 1px rgba(45,212,191,0.38)'
   } else if (d.focused) {
-    boxShadow = '0 0 0 1px rgba(45,212,191,0.22)'
+    boxShadow = '0 0 0 1px rgba(45,212,191,0.2)'
   } else if (d.searchHighlight === 'strong') {
-    boxShadow = '0 0 0 1.5px rgba(45,212,191,0.5), 0 0 20px rgba(45,212,191,0.2)'
+    boxShadow = '0 0 0 1.5px rgba(45,212,191,0.45)'
   } else if (d.searchHighlight === 'soft') {
-    boxShadow = '0 0 0 1px rgba(45,212,191,0.28)'
+    boxShadow = '0 0 0 1px rgba(45,212,191,0.24)'
   } else if (d.highlighted) {
-    boxShadow = '0 0 0 1px rgba(45,212,191,0.18)'
+    boxShadow = '0 0 0 1px rgba(45,212,191,0.16)'
   } else if (d.isEntry) {
-    boxShadow = '0 0 0 1px rgba(245,158,11,0.3)'
+    boxShadow = '0 0 0 1px rgba(245,158,11,0.28)'
   } else if (isFolder && d.folderExpanded) {
-    boxShadow = '0 0 0 1px rgba(113,113,122,0.25)'
+    boxShadow = '0 0 0 1px rgba(113,113,122,0.22)'
   } else {
     boxShadow = 'none'
   }
 
   let background: string
   if (isSelected) {
-    background =
-      'linear-gradient(145deg, rgba(45,212,191,0.38) 0%, rgba(16,185,129,0.26) 50%, rgba(20, 24, 28, 0.95) 100%)'
+    background = 'rgba(45,212,191,0.16)'
   } else if (d.isEntry) {
     background = 'rgba(245,158,11,0.06)'
   } else if (isFolder) {
-    background = d.folderExpanded
-      ? 'rgba(36,36,40,0.92)'
-      : 'rgba(22, 22, 24, 0.94)'
+    background = d.folderExpanded ? 'rgba(36,36,40,0.92)' : 'rgba(22, 22, 24, 0.94)'
   } else if (d.searchHighlight === 'strong' && !isSelected) {
-    background = 'rgba(45,212,191,0.14)'
+    background = 'rgba(45,212,191,0.12)'
   } else if (d.searchHighlight === 'soft' && !isSelected) {
-    background = 'rgba(45,212,191,0.08)'
-  } else if (d.highlighted && !isSelected) {
     background = 'rgba(45,212,191,0.07)'
+  } else if (d.highlighted && !isSelected) {
+    background = 'rgba(45,212,191,0.06)'
   } else {
     background = 'rgba(22, 22, 24, 0.94)'
   }
 
   let borderColor: string
   if (isSelected) {
-    borderColor = 'rgba(45,212,191,0.85)'
+    borderColor = 'rgba(45,212,191,0.78)'
   } else if (hovered) {
-    borderColor = 'rgba(45,212,191,0.45)'
+    borderColor = 'rgba(45,212,191,0.4)'
   } else if (d.focused && !isSelected) {
-    borderColor = 'rgba(45,212,191,0.28)'
+    borderColor = 'rgba(45,212,191,0.26)'
   } else if (d.isEntry) {
-    borderColor = 'rgba(245,158,11,0.38)'
+    borderColor = 'rgba(245,158,11,0.36)'
   } else if (isFolder) {
-    borderColor = d.folderExpanded ? 'rgba(161,161,170,0.28)' : 'rgba(255,255,255,0.08)'
+    borderColor = d.folderExpanded ? 'rgba(161,161,170,0.26)' : 'rgba(255,255,255,0.08)'
   } else if (d.searchHighlight === 'strong' && !isSelected) {
-    borderColor = 'rgba(45,212,191,0.55)'
+    borderColor = 'rgba(45,212,191,0.5)'
   } else if (d.searchHighlight === 'soft' && !isSelected) {
-    borderColor = 'rgba(45,212,191,0.32)'
+    borderColor = 'rgba(45,212,191,0.28)'
   } else if (d.highlighted && !isSelected) {
-    borderColor = 'rgba(45,212,191,0.22)'
+    borderColor = 'rgba(45,212,191,0.2)'
   } else {
     borderColor = 'rgba(255,255,255,0.06)'
   }
 
   const cursorClass = canDrag ? 'prebase-drag-ready' : 'prebase-nodrag'
+  const tooltip = isFolder
+    ? `${d.label} — click to select, click again to ${d.folderExpanded ? 'collapse' : 'expand'}`
+    : [d.path, d.description].filter(Boolean).join('\n\n')
 
   return (
     <>
@@ -158,75 +153,56 @@ function ArchitectureNodeComponent({ data, selected: rfSelected }: NodeProps) {
       <div
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        title={
-          isFolder
-            ? `${d.label} — click to select, click again to ${d.folderExpanded ? 'collapse' : 'expand'}`
-            : d.path
-              ? `${d.path}\n\n${d.description ?? ''}`
-              : d.description
-        }
-        className={`architecture-node relative flex items-center gap-2 rounded-xl select-none px-3 py-2.5 border ${cursorClass} ${
-          isSelected ? 'ring-1 ring-teal-400/40' : ''
+        title={tooltip || undefined}
+        className={`architecture-node relative flex flex-col items-center justify-center gap-0.5 rounded-md select-none px-1 py-1 border ${cursorClass} ${
+          isSelected ? 'ring-1 ring-teal-400/35' : hovered ? 'ring-1 ring-teal-400/18' : ''
         }`}
         style={{
-          width: NODE_WIDTH,
-          minHeight: d.isEntry ? ENTRY_HEIGHT : NODE_HEIGHT,
-          maxHeight: d.isEntry ? ENTRY_HEIGHT : NODE_HEIGHT,
+          width: FLOW_NODE_WIDTH,
+          height: nodeHeight,
+          minHeight: nodeHeight,
+          maxHeight: nodeHeight,
           background,
           borderColor,
           boxShadow,
           opacity,
-          // CSS-only hover scale. Avoids framer-motion promoting EVERY node to its
-          // own compositor layer (the main raster-tile-memory contributor).
-          transform: hovered && !isSelected ? 'scale(1.05)' : 'none',
           transition:
-            'background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.16s ease, opacity 0.18s ease'
+            'background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease'
         }}
       >
         {isFolder && (
           <ChevronRight
-            className="w-3 h-3 text-text-muted shrink-0 transition-transform duration-200"
+            className="absolute left-1 top-1 w-2.5 h-2.5 text-text-muted shrink-0 transition-transform duration-200"
             style={{ transform: d.folderExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
           />
         )}
         <div
-          className="flex items-center justify-center w-7 h-7 rounded-lg shrink-0 transition-colors duration-150"
+          className="flex items-center justify-center w-6 h-6 rounded shrink-0"
           style={{ backgroundColor: `${d.color}1a` }}
         >
-          <Icon className="w-3.5 h-3.5" style={{ color: d.color }} />
+          <Icon className="w-3 h-3" style={{ color: d.color }} />
         </div>
-        <div className="flex flex-col min-w-0 flex-1">
-          <span
-            className={`text-xs font-medium truncate leading-tight ${
-              isSelected ? 'text-teal-50' : 'text-text-primary'
-            }`}
-          >
-            {d.label}
+        <span
+          className={`text-[9px] font-medium truncate leading-tight text-center w-full px-0.5 ${
+            isSelected ? 'text-teal-50' : 'text-text-primary'
+          }`}
+        >
+          {d.label}
+        </span>
+        {d.isEntry ? (
+          <span className="text-[7px] text-amber-400/80 uppercase tracking-wider -mt-0.5">
+            Entry
           </span>
-          {d.isEntry ? (
-            <span className="text-[9px] text-amber-400/80 uppercase tracking-wider mt-0.5">
-              Entry
-            </span>
-          ) : isFolder ? (
-            <span className="text-[10px] text-text-muted mt-0.5">
-              {d.childCount ?? 0} items · {d.folderExpanded ? 'expanded' : 'collapsed'}
-            </span>
-          ) : (
-            <span
-              className="text-[10px] truncate leading-tight mt-0.5"
-              style={{ color: isSelected ? 'rgba(45,212,191,0.85)' : 'rgba(161,161,170,0.8)' }}
-            >
-              {d.path?.split('/').slice(-2).join('/') ?? ''}
-            </span>
-          )}
-        </div>
+        ) : isFolder ? (
+          <span className="text-[8px] text-text-muted -mt-0.5">{d.childCount ?? 0} items</span>
+        ) : null}
         {d.meta?.imports && d.meta.imports.length > 0 && !d.isEntry && !isFolder && (
           <span
-            className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] border"
+            className="absolute -top-1 -right-1 flex h-3 min-w-3 items-center justify-center rounded-full px-0.5 text-[7px] border"
             style={{
-              background: isSelected ? 'rgba(45,212,191,0.22)' : 'rgba(36,36,40,1)',
-              borderColor: isSelected ? 'rgba(45,212,191,0.45)' : 'rgba(255,255,255,0.08)',
-              color: isSelected ? 'rgba(45,212,191,0.95)' : 'rgba(161,161,170,0.9)'
+              background: isSelected ? 'rgba(45,212,191,0.2)' : 'rgba(36,36,40,1)',
+              borderColor: isSelected ? 'rgba(45,212,191,0.4)' : 'rgba(255,255,255,0.08)',
+              color: isSelected ? 'rgba(45,212,191,0.92)' : 'rgba(161,161,170,0.88)'
             }}
           >
             {d.meta.imports.length}

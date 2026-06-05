@@ -5,14 +5,17 @@ export interface LayoutRuntimeConfig {
   layerGap: number
   centerClearance: number
   scatterRelaxIterations: number
+  /** Multiplier from sidebar spacing control (compact / balanced / spacious). */
+  spacingScale: number
 }
 
 export const DEFAULT_LAYOUT_RUNTIME: LayoutRuntimeConfig = {
   layerRadiusScale: 1,
-  maxNodesPerLayer: 24,
-  layerGap: 132,
-  centerClearance: 108,
-  scatterRelaxIterations: 10
+  maxNodesPerLayer: 12,
+  layerGap: 168,
+  centerClearance: 140,
+  scatterRelaxIterations: 22,
+  spacingScale: 1
 }
 
 export function mergeLayoutRuntime(

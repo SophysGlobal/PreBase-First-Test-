@@ -3,8 +3,7 @@ import { useStoreApi } from '@xyflow/react'
 import { X } from 'lucide-react'
 import {
   getHierarchyRingLabels,
-  getPyramidLayerLabels,
-  type HierarchyRingLabel
+  getPyramidLayerLabels
 } from '@core/layout/hierarchy-layout'
 import { layerExplanationForDepth } from '@core/layout/dependency-depth'
 import { useGraphStore } from '../../state/graph-store'
@@ -116,8 +115,6 @@ export function HierarchyLabels() {
 
   if (labels.length === 0) return null
 
-  const isPyramid = layoutMode === 'pyramid'
-
   return (
     <>
       <div
@@ -126,45 +123,29 @@ export function HierarchyLabels() {
       >
         <div ref={layerRef} style={{ transformOrigin: '0 0' }}>
           {labels.map((label) => {
-            const ringLabel = label as HierarchyRingLabel
-            const showRing =
-              !isPyramid && layoutMode === 'hierarchy' && ringLabel.radius > 0
             const active = selectedDepth === label.depth
 
             return (
-              <div key={`${layoutMode}-${label.depth}`}>
-                {showRing && (
-                  <div
-                    className="absolute rounded-full border border-teal-500/10 pointer-events-none"
-                    style={{
-                      left: 0,
-                      top: 0,
-                      width: Math.min(ringLabel.radius, 360) * 2,
-                      height: Math.min(ringLabel.radius, 360) * 2,
-                      transform: 'translate(-50%, -50%)'
-                    }}
-                  />
-                )}
-                <button
-                  type="button"
-                  title="Click for layer explanation"
-                  onClick={() =>
-                    setSelectedDepth((d) => (d === label.depth ? null : label.depth))
-                  }
-                  className={`absolute px-2 py-0.5 rounded-md text-[9px] tracking-wide whitespace-nowrap pointer-events-auto cursor-pointer transition-colors titlebar-no-drag ${
-                    active
-                      ? 'text-teal-200 bg-teal-500/20 border border-teal-400/50'
-                      : 'text-text-muted/90 bg-surface-overlay/65 border border-border-subtle/50 hover:border-teal-400/40 hover:text-text-secondary'
-                  }`}
-                  style={{
-                    left: label.x,
-                    top: label.y,
-                    transform: 'translate(-50%, -100%)'
-                  }}
-                >
-                  {label.label}
-                </button>
-              </div>
+              <button
+                key={`${layoutMode}-${label.depth}`}
+                type="button"
+                title="Click for layer explanation"
+                onClick={() =>
+                  setSelectedDepth((d) => (d === label.depth ? null : label.depth))
+                }
+                className={`absolute px-2 py-0.5 rounded-md text-[9px] tracking-wide whitespace-nowrap pointer-events-auto cursor-pointer transition-colors titlebar-no-drag ${
+                  active
+                    ? 'text-teal-200 bg-teal-500/20 border border-teal-400/50'
+                    : 'text-text-muted/90 bg-surface-overlay/65 border border-border-subtle/50 hover:border-teal-400/40 hover:text-text-secondary'
+                }`}
+                style={{
+                  left: label.x,
+                  top: label.y,
+                  transform: 'translate(-50%, -100%)'
+                }}
+              >
+                {label.label}
+              </button>
             )
           })}
         </div>

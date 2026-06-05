@@ -285,6 +285,21 @@ export function SettingsView() {
                     className="w-32 accent-teal-400"
                   />
                 </Row>
+                <Row
+                  label="Network drag direction"
+                  hint="Natural follows cursor drag like grabbing the sphere; Inverted rotates opposite to cursor."
+                >
+                  <select
+                    value={settings.networkDragDirection}
+                    onChange={(e) =>
+                      settings.setNetworkDragDirection(e.target.value as 'natural' | 'inverted')
+                    }
+                    className={selectClass()}
+                  >
+                    <option value="natural">Natural</option>
+                    <option value="inverted">Inverted</option>
+                  </select>
+                </Row>
               </Panel>
             )}
 

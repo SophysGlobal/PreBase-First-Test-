@@ -9,7 +9,7 @@ import {
   type NodeMouseHandler,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { motion, AnimatePresence } from 'framer-motion'
+import { AnimatePresence } from 'framer-motion'
 import { ArchitectureNode } from '../nodes/ArchitectureNode'
 import { ArchitectureEdge } from '../edges/ArchitectureEdge'
 import { ArchitectureGraphLegend } from './GraphLegendBar'
@@ -22,8 +22,9 @@ import { NodeContextMenu } from './NodeContextMenu'
 import { useGraphStore } from '../../state/graph-store'
 import { useSettingsStore } from '../../state/settings-store'
 import { viewportFitForLayout } from '@core/layout/layout-constraints'
-import { getRenderableNodeIds, toFlowEdges, toFlowNodes } from '../../utils/flow-adapter'
-import { debugArchRender, debugTilePressure } from '../../utils/graph-debug'
+import { getNeighborhood, getRenderableNodeIds, styleForGraphEdge, toFlowEdges, toFlowNodes, FLOW_ENTRY_HEIGHT, FLOW_NODE_HEIGHT, FLOW_NODE_WIDTH } from '../../utils/flow-adapter'
+import { searchHighlightStrength } from '../../utils/graph-search'
+import { debugArchRender, debugGraphBounds, debugTilePressure } from '../../utils/graph-debug'
 
 const nodeTypes = { architecture: ArchitectureNode }
 const edgeTypes = { architecture: ArchitectureEdge }
@@ -136,9 +137,11 @@ function FocusCameraController() {
 
     const node = getNode(target)
     if (!node) return
+    const h =
+      (node.data as { isEntry?: boolean })?.isEntry ? FLOW_ENTRY_HEIGHT : FLOW_NODE_HEIGHT
 
     const t = setTimeout(() => {
-      void setCenter(node.position.x + 84, node.position.y + 26, {
+      void setCenter(node.position.x + FLOW_NODE_WIDTH / 2, node.position.y + h / 2, {
         zoom: 1.02,
         duration: 550
       })
@@ -185,10 +188,14 @@ export function GraphCanvas() {
   const renderThrottlingMs = useSettingsStore((s) => s.renderThrottlingMs)
 
   const [dragReadyNodeId, setDragReadyNodeId] = useState<string | null>(null)
-  const [viewportMoving, setViewportMoving] = useState(false)
-  const viewportMovingRef = useRef(false)
+  const [selectionRefresh, setSelectionRefresh] = useState(0)
+  const layoutMode = useGraphStore((s) => s.layoutMode)
+  const shellRef = useRef<HTMLDivElement>(null)
   const zoomEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const layoutRecalcRef = useRef(0)
+  const flowCountsRef = useRef({ nodes: 0, edges: 0 })
+  const isZoomingRef = useRef(false)
 
   useEffect(
     () => () => {
@@ -230,8 +237,8 @@ export function GraphCanvas() {
     if (!snapshot) return []
     return toFlowNodes(snapshot, {
       searchQuery,
-      focusedNodeId,
-      selectedNodeId,
+      focusedNodeId: null,
+      selectedNodeId: null,
       filter,
       graphOrganizationMode,
       graphDepth,
@@ -255,8 +262,6 @@ export function GraphCanvas() {
   }, [
     snapshot,
     searchQuery,
-    focusedNodeId,
-    selectedNodeId,
     filter,
     graphOrganizationMode,
     architectureMode,
@@ -281,8 +286,8 @@ export function GraphCanvas() {
   const flowOpts = useMemo(
     () => ({
       searchQuery,
-      focusedNodeId,
-      selectedNodeId,
+      focusedNodeId: null as string | null,
+      selectedNodeId: null as string | null,
       filter,
       graphOrganizationMode,
       graphDepth,
@@ -304,8 +309,6 @@ export function GraphCanvas() {
     }),
     [
       searchQuery,
-      focusedNodeId,
-      selectedNodeId,
       filter,
       graphOrganizationMode,
       architectureMode,
@@ -340,6 +343,13 @@ export function GraphCanvas() {
     return toFlowEdges(snapshot, { ...flowOpts, selectedEdgeId: null, renderableNodeIds })
   }, [snapshot, flowOpts, renderableNodeIds])
 
+  flowCountsRef.current = { nodes: flowNodes.length, edges: flowEdges.length }
+
+  useEffect(() => {
+    if (!snapshot?.positions) return
+    debugGraphBounds(`arch-${layoutMode}`, Object.values(snapshot.positions))
+  }, [snapshot?.positions, layoutMode])
+
   useEffect(() => {
     if (!edgeDiagnosticsEnabled || !snapshot) return
     const totalImports = snapshot.edges.filter((e) => e.kind === 'import').length
@@ -360,31 +370,34 @@ export function GraphCanvas() {
   }, [edgeDiagnosticsEnabled, snapshot, flowNodes.length, renderableNodeIds.size, flowEdges.length, edgeDebugMode])
 
   useEffect(() => {
+    layoutRecalcRef.current++
     debugArchRender('flow-sync', {
       nodes: flowNodes.length,
       edges: flowEdges.length,
-      viewportMoving
+      layoutRecalcs: layoutRecalcRef.current
     })
-  }, [flowNodes.length, flowEdges.length, viewportMoving])
+  }, [flowNodes, flowEdges])
 
   const markViewportMoving = useCallback(() => {
-    if (!viewportMovingRef.current) {
-      viewportMovingRef.current = true
-      setViewportMoving(true)
+    const shell = shellRef.current
+    if (!shell) return
+    isZoomingRef.current = true
+    if (!shell.classList.contains('is-zooming')) {
+      shell.classList.add('is-zooming')
       debugArchRender('zoom-start')
     }
     debugTilePressure('arch-zoom', {
-      nodes: flowNodes.length,
-      edges: flowEdges.length,
-      viewportMoving: true
+      nodes: flowCountsRef.current.nodes,
+      edges: flowCountsRef.current.edges,
+      layoutRecalcs: layoutRecalcRef.current
     })
     if (zoomEndTimerRef.current) clearTimeout(zoomEndTimerRef.current)
     zoomEndTimerRef.current = setTimeout(() => {
-      viewportMovingRef.current = false
-      setViewportMoving(false)
+      isZoomingRef.current = false
+      shell.classList.remove('is-zooming')
       debugArchRender('zoom-end')
-    }, 150)
-  }, [flowNodes.length, flowEdges.length])
+    }, 220)
+  }, [])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges)
@@ -496,31 +509,114 @@ export function GraphCanvas() {
   useEffect(() => () => clearHoverTimer(), [clearHoverTimer])
 
   useEffect(() => {
+    if (!snapshot || isZoomingRef.current) return
+    const query = searchQuery.trim()
+    const focusId = focusedNodeId ?? selectedNodeId
+    const neighborhood =
+      focusNeighborhood && focusId ? getNeighborhood(snapshot, focusId, 2) : null
+    const selectionNeighbors =
+      selectedNodeId && !query ? getNeighborhood(snapshot, selectedNodeId, 1) : null
+    const nodeById = new Map(snapshot.nodes.map((n) => [n.id, n]))
+
     setNodes((current) =>
       current.map((n) => {
         const isSelected = n.id === selectedNodeId
-        const isFocused = n.id === (focusedNodeId ?? selectedNodeId)
+        const isFocused = n.id === focusId
         const canDrag = dragEnabledNodeIds.has(n.id)
+        const graphNode = nodeById.get(n.id)
+        const highlightStrength =
+          graphNode && query ? searchHighlightStrength(graphNode, query) : 'none'
+        const isConnectedToSelection =
+          selectionNeighbors !== null && selectionNeighbors.has(n.id) && !isSelected
+        const dimmed = dimOnSearch && query.length > 0 && highlightStrength === 'none'
+        const softDimmed =
+          !dimmed &&
+          ((neighborhood !== null && !neighborhood.has(n.id)) ||
+            (selectionNeighbors !== null && !selectionNeighbors.has(n.id) && !isSelected))
+        const highlighted = highlightStrength !== 'none' || isConnectedToSelection
+        const isEntry = (n.data as { isEntry?: boolean }).isEntry
+        const isFolder = (n.data as { isFolder?: boolean }).isFolder
+        const zIndex = isEntry ? 10 : isSelected ? 6 : isFocused ? 4 : isFolder ? 2 : 1
+        const data = n.data as Record<string, unknown>
+
         if (
           n.selected === isSelected &&
-          (n.data as { selected?: boolean }).selected === isSelected &&
-          (n.data as { canDrag?: boolean }).canDrag === canDrag
+          n.zIndex === zIndex &&
+          data.selected === isSelected &&
+          data.focused === isFocused &&
+          data.canDrag === canDrag &&
+          data.dimmed === dimmed &&
+          data.softDimmed === softDimmed &&
+          data.highlighted === highlighted &&
+          data.searchHighlight === highlightStrength
         ) {
           return n
         }
+
         return {
           ...n,
           selected: isSelected,
+          zIndex,
           data: {
             ...n.data,
             selected: isSelected,
             focused: isFocused,
-            canDrag
+            canDrag,
+            dimmed,
+            softDimmed,
+            highlighted,
+            searchHighlight: highlightStrength
           }
         }
       })
     )
-  }, [selectedNodeId, focusedNodeId, dragEnabledNodeIds, setNodes])
+  }, [
+    snapshot,
+    searchQuery,
+    dimOnSearch,
+    focusNeighborhood,
+    selectedNodeId,
+    focusedNodeId,
+    dragEnabledNodeIds,
+    setNodes,
+    selectionRefresh
+  ])
+
+  useEffect(() => {
+    if (!snapshot || isZoomingRef.current) return
+    const focusId = focusedNodeId ?? selectedNodeId
+    const edgeById = new Map(snapshot.edges.map((e) => [e.id, e]))
+
+    setEdges((current) =>
+      current.map((edge) => {
+        const graphEdge = edgeById.get(edge.id)
+        if (!graphEdge) return edge
+        const styled = styleForGraphEdge(graphEdge, snapshot, focusId, null)
+        const data = edge.data as { variant?: string }
+        const prev = edge.style ?? {}
+        if (
+          data.variant === styled.variant &&
+          prev.stroke === styled.stroke &&
+          Number(prev.strokeWidth) === styled.strokeWidth &&
+          Number(prev.opacity) === styled.opacity
+        ) {
+          return edge
+        }
+        return {
+          ...edge,
+          zIndex: styled.variant === 'highlighted' || styled.variant === 'selected' ? 3 : edge.zIndex,
+          style: {
+            ...prev,
+            stroke: styled.stroke,
+            strokeWidth: styled.strokeWidth,
+            opacity: styled.opacity,
+            strokeDasharray: styled.dashed ? '6 4' : undefined
+          },
+          data: { ...edge.data, variant: styled.variant }
+        }
+      })
+    )
+  }, [snapshot, selectedNodeId, focusedNodeId, setEdges, selectionRefresh])
 
   if (!snapshot) return null
 
@@ -535,9 +631,7 @@ export function GraphCanvas() {
   }
 
   return (
-    <div
-      className={`relative flex-1 h-full graph-dot-surface graph-viewport-shell${viewportMoving ? ' is-zooming' : ''}`}
-    >
+    <div ref={shellRef} className="relative flex-1 h-full graph-dot-surface graph-viewport-shell">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -552,8 +646,9 @@ export function GraphCanvas() {
         onMove={markViewportMoving}
         onMoveEnd={() => {
           if (zoomEndTimerRef.current) clearTimeout(zoomEndTimerRef.current)
-          viewportMovingRef.current = false
-          setViewportMoving(false)
+          isZoomingRef.current = false
+          shellRef.current?.classList.remove('is-zooming')
+          setSelectionRefresh((n) => n + 1)
           debugArchRender('zoom-end')
         }}
         edgesReconnectable={false}
@@ -561,10 +656,10 @@ export function GraphCanvas() {
         edgeTypes={edgeTypes}
         defaultViewport={{ x: 0, y: 0, zoom: 0.88 }}
         minZoom={0.2}
-        maxZoom={1.75}
+        maxZoom={1.25}
         proOptions={{ hideAttribution: true }}
-        // Viewport culling keeps offscreen DOM out of the compositor (reduces tile memory).
         onlyRenderVisibleElements
+        elevateNodesOnSelect={false}
         panOnScroll={panSensitivity >= 1}
         zoomOnScroll
         panOnDrag
@@ -589,11 +684,11 @@ export function GraphCanvas() {
         <InitialViewportController />
         <LayoutViewportController />
         <FocusCameraController />
-        <GraphMinimap hideWhileMoving={viewportMoving} />
+        <GraphMinimap />
       </ReactFlow>
 
       <ArchitectureGraphLegend nodes={snapshot.nodes} />
-      {!viewportMoving && <HierarchyLabels />}
+      <HierarchyLabels />
 
       <NodeInspector />
       <AiChatBubble />
@@ -610,17 +705,11 @@ export function GraphCanvas() {
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-2 rounded-full bg-[#141518]/95 border border-border-subtle text-xs text-text-secondary pointer-events-none"
-        >
-          <span>{flowNodes.length} visible</span>
-          <span className="w-px h-3 bg-border-subtle" />
-          <span>{flowEdges.filter((e) => (e.data as { variant?: string })?.variant !== 'contains').length} links</span>
-        </motion.div>
-      </AnimatePresence>
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-2 rounded-full bg-[#141518] border border-border-subtle text-xs text-text-secondary pointer-events-none">
+        <span>{flowNodes.length} visible</span>
+        <span className="w-px h-3 bg-border-subtle" />
+        <span>{flowEdges.filter((e) => (e.data as { variant?: string })?.variant !== 'contains').length} links</span>
+      </div>
     </div>
   )
 }
