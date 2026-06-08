@@ -2,7 +2,8 @@ import fg from 'fast-glob'
 import { basename, extname } from 'path'
 import ignore from 'ignore'
 import { DEFAULT_IGNORE_PATTERNS } from '../utils/ignore-patterns'
-import { isCodeFile, normalizePath, toRelative } from '../utils/paths'
+import { isGraphRelevantFile } from '../utils/project-files'
+import { normalizePath, toRelative } from '../utils/paths'
 import type { ScannedFile } from '../types'
 
 export interface ScanOptions {
@@ -35,7 +36,7 @@ export class FileScanner {
     for (const absolutePath of entries) {
       const relativePath = toRelative(projectRoot, absolutePath)
       if (this.ig.ignores(relativePath)) continue
-      if (!isCodeFile(absolutePath)) continue
+      if (!isGraphRelevantFile(relativePath)) continue
 
       files.push({
         absolutePath: normalizePath(absolutePath),
@@ -60,7 +61,7 @@ export class FileScanner {
       .sort((a, b) => a.localeCompare(b))
   }
 
-  detectProjectType(projectRoot: string, files: ScannedFile[]): string {
+  detectProjectType(_projectRoot: string, files: ScannedFile[]): string {
     const names = new Set(files.map((f) => basename(f.relativePath)))
     if (names.has('package.json')) {
       const hasReact = files.some(
@@ -68,6 +69,17 @@ export class FileScanner {
       )
       return hasReact ? 'react' : 'javascript'
     }
+    if (names.has('pom.xml') || names.has('build.gradle') || names.has('build.gradle.kts')) {
+      return 'java'
+    }
+    if (names.has('go.mod')) return 'go'
+    if (names.has('Cargo.toml')) return 'rust'
+    if (names.has('pyproject.toml') || names.has('requirements.txt')) return 'python'
+    if (names.has('composer.json')) return 'php'
+    if (files.some((f) => f.extension === '.java' || f.extension === '.kt')) return 'java'
+    if (files.some((f) => f.extension === '.py')) return 'python'
+    if (files.some((f) => f.extension === '.go')) return 'go'
+    if (files.some((f) => f.extension === '.rs')) return 'rust'
     if (files.some((f) => f.extension === '.ts' || f.extension === '.tsx')) {
       return 'typescript'
     }

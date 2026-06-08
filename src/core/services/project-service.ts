@@ -5,9 +5,11 @@ import { GraphGenerator } from '../graph/graph-generator'
 import { LayoutEngine } from '../layout/layout-engine'
 import { WatcherEngine, type WatcherEvent } from '../watcher/watcher-engine'
 import { assignLayersToNodes } from '../utils/architecture-layers'
+import { auditGraphCompleteness, summarizeMissing } from '../graph/graph-completeness'
 import { detectEntryNodeId, readPackageMain } from '../utils/entry-detector'
-import { computeHierarchyLayout } from '../layout/hierarchy-layout'
 import { loadTsconfigPaths, type PathMappings } from '../utils/tsconfig-paths'
+import type { LayoutRuntimeConfig } from '../layout/layout-config'
+import { mergeLayoutRuntime } from '../layout/layout-config'
 import type { GraphSnapshot, IncrementalUpdate, LayoutMode, ScannedFile } from '../types'
 
 export class ProjectService {
@@ -22,6 +24,9 @@ export class ProjectService {
   private pathMappings: PathMappings = {}
   private onUpdate: ((payload: GraphSnapshot | IncrementalUpdate, full: boolean) => void) | null =
     null
+  private lastLayoutMode: LayoutMode = 'hierarchy'
+  private lastLayoutRuntime = mergeLayoutRuntime()
+  private edgeDiagEnabled = process.env.PREBASE_EDGE_DIAG === '1'
 
   getSnapshot(): GraphSnapshot | null {
     return this.snapshot
@@ -35,6 +40,9 @@ export class ProjectService {
     this.onUpdate = onUpdate
 
     const files = await this.scanner.scanProject(projectPath)
+    if (this.edgeDiagEnabled) {
+      console.info('[EdgeDiag] Stage 1 files discovered:', files.length)
+    }
     const projectName = basename(projectPath)
     const packageMain = await readPackageMain(projectPath)
     this.pathMappings = loadTsconfigPaths(projectPath)
@@ -47,7 +55,21 @@ export class ProjectService {
     this.fileIndex = new Map(files.map((f) => [f.relativePath, f]))
 
     const parseResults = await this.parser.parseFiles(files)
+    if (this.edgeDiagEnabled) {
+      const dependencies = parseResults.reduce((s, r) => s + r.imports.length, 0)
+      console.info('[EdgeDiag] Stage 2 dependencies discovered:', dependencies)
+    }
     const graph = this.graphGen.buildFromParseResults(projectPath, projectName, parseResults)
+    if (this.edgeDiagEnabled) {
+      const importEdges = graph.edges.filter((e) => e.kind === 'import').length
+      const containsEdges = graph.edges.filter((e) => e.kind === 'contains').length
+      const dependencyEdges = graph.edges.filter((e) => e.kind === 'dependency').length
+      console.info('[EdgeDiag] Stage 3 edges generated:', graph.edges.length, {
+        import: importEdges,
+        contains: containsEdges,
+        dependency: dependencyEdges
+      })
+    }
 
     const layoutNodes = graph.nodes.filter((n) => n.kind !== 'folder')
     const entryNodeId = detectEntryNodeId(
@@ -91,6 +113,14 @@ export class ProjectService {
       entryNodeId,
       scannedAt: Date.now()
     }
+    if (this.edgeDiagEnabled) {
+      console.info('[EdgeDiag] Stage 4 graph state edges:', this.snapshot.edges.length)
+    }
+
+    const completeness = auditGraphCompleteness(files, this.snapshot)
+    if (!completeness.isComplete) {
+      console.warn('[PreBase]', summarizeMissing(completeness))
+    }
 
     this.watcher.start(projectPath, (events) => void this.handleWatcherEvents(events))
 
@@ -104,24 +134,23 @@ export class ProjectService {
     this.onUpdate = null
   }
 
-  async relayout(mode: LayoutMode = 'hierarchy'): Promise<GraphSnapshot | null> {
+  async relayout(
+    mode: LayoutMode = 'hierarchy',
+    runtime?: Partial<LayoutRuntimeConfig>
+  ): Promise<GraphSnapshot | null> {
     if (!this.snapshot) return null
+
+    this.lastLayoutMode = mode
+    if (runtime) this.lastLayoutRuntime = mergeLayoutRuntime(runtime)
 
     const layoutNodes = this.snapshot.nodes.filter((n) => n.kind !== 'folder')
     const entryId = this.snapshot.entryNodeId
-    const positions =
-      (mode === 'hierarchy' || mode === 'circular') && entryId
-        ? computeHierarchyLayout(layoutNodes, this.snapshot.edges, {
-            entryNodeId: entryId,
-            layerSpacing: mode === 'circular' ? 185 : 165,
-            nodePadding: 68,
-            clusterSeparation: 240
-          })
-        : await this.layout.layout(layoutNodes, this.snapshot.edges, {
-            mode,
-            entryNodeId: entryId,
-            preservePositions: {}
-          })
+    const positions = await this.layout.layout(layoutNodes, this.snapshot.edges, {
+      mode,
+      entryNodeId: entryId,
+      preservePositions: {},
+      runtime: this.lastLayoutRuntime
+    })
 
     for (const folder of this.snapshot.nodes.filter((n) => n.kind === 'folder')) {
       const children = this.snapshot.nodes.filter(
@@ -193,7 +222,9 @@ export class ProjectService {
       newGraph.edges,
       this.snapshot.positions,
       [...diff.addedNodes.map((n) => n.id), ...diff.removedNodeIds],
-      entryNodeId
+      entryNodeId,
+      this.lastLayoutMode,
+      this.lastLayoutRuntime
     )
 
     this.snapshot = {
@@ -203,6 +234,8 @@ export class ProjectService {
       entryNodeId,
       scannedAt: Date.now()
     }
+    this.repositionFolders(positions)
+    this.snapshot = { ...this.snapshot, positions }
     this.onUpdate({ ...diff, positions }, false)
   }
 
@@ -248,12 +281,16 @@ export class ProjectService {
       newGraph.edges,
       this.snapshot.positions,
       changedIds,
-      this.snapshot.entryNodeId
+      this.snapshot.entryNodeId,
+      this.lastLayoutMode,
+      this.lastLayoutRuntime
     )
 
     for (const id of diff.removedNodeIds) {
       delete positions[id]
     }
+
+    this.repositionFolders(positions)
 
     this.snapshot = {
       ...newGraph,
@@ -263,6 +300,21 @@ export class ProjectService {
       scannedAt: Date.now()
     }
     this.onUpdate({ ...diff, positions }, false)
+  }
+
+  private repositionFolders(positions: Record<string, import('../types').LayoutPosition>): void {
+    if (!this.snapshot) return
+    for (const folder of this.snapshot.nodes.filter((n) => n.kind === 'folder')) {
+      const children = this.snapshot.nodes.filter(
+        (n) => n.parentId === folder.id && positions[n.id]
+      )
+      if (children.length > 0) {
+        positions[folder.id] = {
+          x: children.reduce((s, c) => s + positions[c.id].x, 0) / children.length,
+          y: children.reduce((s, c) => s + positions[c.id].y, 0) / children.length
+        }
+      }
+    }
   }
 
   private async buildAllParseResults() {

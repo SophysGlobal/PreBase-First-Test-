@@ -1,10 +1,16 @@
-import type { Edge, Node } from '@xyflow/react'
+import { MarkerType, type Edge, type Node } from '@xyflow/react'
 import type { ArchitectureLayerId } from '../../../core/utils/architecture-layers'
-import type { GraphEdge, GraphNode, GraphSnapshot } from '../../../core/types'
-import type { FilterKind } from '../state/graph-store'
+import type { GraphEdge, GraphSnapshot } from '../../../core/types'
+import type { FilterKind, GraphOrganizationMode } from '../state/graph-store'
+import { isTreeGraphMode } from '../state/graph-store'
 import { inferFileDescription } from './file-description'
+import { searchHighlightStrength } from './graph-search'
 import { getVisibleNodeIds } from './graph-visibility'
+import { selectVisibleImportEdgeIds } from './edge-ranking'
+import { getFileTypeColor } from './file-type-colors'
+import { getModeNodeIds, type ArchitectureMode } from './architecture-modes'
 import {
+  buildChildrenIndex,
   computeRadialPositions,
   getDirectChildren,
   isNodeHiddenByCollapsedFolders
@@ -35,10 +41,30 @@ const LAYER_COLORS: Partial<Record<ArchitectureLayerId, string>> = {
   other: '#6366f1'
 }
 
+/** Canonical node fill color, shared by the tree (React Flow) and network (3D) views. */
+export function nodeDisplayColor(
+  node: import('../../../core/types').GraphNode,
+  entryNodeId: string | null | undefined
+): string {
+  const isEntry = node.isEntry || node.id === entryNodeId
+  if (isEntry) return '#f59e0b'
+  if (node.kind === 'folder') return KIND_COLORS.folder
+  if (node.path && (node.kind === 'file' || node.kind === 'component' || node.kind === 'module')) {
+    return getFileTypeColor(node.path)
+  }
+  const archLayer = node.meta?.architectureLayer as ArchitectureLayerId | undefined
+  return (
+    (archLayer && LAYER_COLORS[archLayer]) || KIND_COLORS[node.kind] || KIND_COLORS.file
+  )
+}
+
 export type EdgeVisualVariant =
   | 'import'
-  | 'dynamic'
+  | 'service'
+  | 'utility'
+  | 'entry'
   | 'component'
+  | 'dynamic'
   | 'folder-link'
   | 'contains'
   | 'highlighted'
@@ -49,7 +75,7 @@ export interface FlowAdapterOptions {
   focusedNodeId: string | null
   selectedNodeId: string | null
   filter: FilterKind
-  showFolders: boolean
+  graphOrganizationMode: GraphOrganizationMode
   graphDepth: number
   layerVisibility: Record<ArchitectureLayerId, boolean>
   isolatedLayer: ArchitectureLayerId | null
@@ -58,9 +84,22 @@ export interface FlowAdapterOptions {
   userPositions: Record<string, { x: number; y: number }>
   dimOnSearch: boolean
   expandedFolderIds: Set<string>
+  dragEnabledNodeIds: Set<string>
+  showEdgeLabels: boolean
+  reduceAnimations?: boolean
+  edgeDebugMode?: boolean
+  visibleRelatedConnections?: 0 | 1 | 2
+  edgeSimplificationThreshold?: number
+  folderExpansionRadius?: number
+  maxRenderedNodes?: number
+  /**
+   * When set (architecture/tree view only), restricts rendered nodes to the
+   * focused architectural slice for the mode. Not used by the network view.
+   */
+  architectureMode?: ArchitectureMode
 }
 
-function getNeighborhood(snapshot: GraphSnapshot, nodeId: string, hops: number): Set<string> {
+export function getNeighborhood(snapshot: GraphSnapshot, nodeId: string, hops: number): Set<string> {
   const set = new Set<string>([nodeId])
   let frontier = [nodeId]
   for (let h = 0; h < hops; h++) {
@@ -100,52 +139,103 @@ function classifyEdgeVariant(
   if (edge.kind === 'contains') return 'contains'
   if (edge.kind === 'dependency') return 'folder-link'
   if (edge.meta?.isDynamic) return 'dynamic'
+
+  const source = snapshot.nodes.find((n) => n.id === edge.source)
   const target = snapshot.nodes.find((n) => n.id === edge.target)
+
+  if (
+    source?.isEntry ||
+    source?.id === snapshot.entryNodeId ||
+    target?.isEntry ||
+    target?.id === snapshot.entryNodeId
+  ) {
+    return 'entry'
+  }
+
+  const targetLayer = target?.meta?.architectureLayer
+  if (targetLayer === 'services' || target?.kind === 'service') return 'service'
+  if (targetLayer === 'utils' || targetLayer === 'config') return 'utility'
   if (target?.kind === 'component' || target?.meta?.isComponent) return 'component'
   return 'import'
 }
+
+export const FLOW_NODE_WIDTH = 64
+export const FLOW_NODE_HEIGHT = 62
+export const FLOW_ENTRY_HEIGHT = 66
 
 const EDGE_STYLES: Record<
   EdgeVisualVariant,
   { stroke: string; strokeWidth: number; opacity: number; dashed?: boolean }
 > = {
-  import: { stroke: 'rgba(255,255,255,0.26)', strokeWidth: 1, opacity: 0.82 },
-  dynamic: { stroke: 'rgba(168,85,247,0.5)', strokeWidth: 1.1, opacity: 0.88, dashed: true },
-  component: { stroke: 'rgba(167,139,250,0.45)', strokeWidth: 1.05, opacity: 0.85 },
-  'folder-link': { stroke: 'rgba(113,113,122,0.4)', strokeWidth: 1, opacity: 0.7, dashed: true },
-  contains: { stroke: 'rgba(113,113,122,0.22)', strokeWidth: 0.75, opacity: 0.55, dashed: true },
-  highlighted: { stroke: 'rgba(45,212,191,0.55)', strokeWidth: 1.2, opacity: 1 },
-  selected: { stroke: 'rgba(245,158,11,0.9)', strokeWidth: 1.6, opacity: 1 }
+  import: { stroke: 'rgba(195,198,215,0.52)', strokeWidth: 1.35, opacity: 0.94 },
+  service: { stroke: 'rgba(52,211,153,0.55)', strokeWidth: 1.15, opacity: 0.9 },
+  utility: { stroke: 'rgba(113,113,122,0.55)', strokeWidth: 1, opacity: 0.82, dashed: true },
+  entry: { stroke: 'rgba(245,158,11,0.55)', strokeWidth: 1.2, opacity: 0.92 },
+  dynamic: { stroke: 'rgba(168,85,247,0.55)', strokeWidth: 1.1, opacity: 0.88, dashed: true },
+  component: { stroke: 'rgba(167,139,250,0.5)', strokeWidth: 1.05, opacity: 0.85 },
+  'folder-link': { stroke: 'rgba(113,113,122,0.45)', strokeWidth: 1, opacity: 0.75, dashed: true },
+  contains: { stroke: 'rgba(113,113,122,0.28)', strokeWidth: 0.85, opacity: 0.65, dashed: true },
+  highlighted: { stroke: 'rgba(45,212,191,0.65)', strokeWidth: 1.35, opacity: 1 },
+  selected: { stroke: 'rgba(245,158,11,0.95)', strokeWidth: 1.75, opacity: 1 }
+}
+
+export function styleForGraphEdge(
+  edge: GraphEdge,
+  snapshot: GraphSnapshot,
+  focusId: string | null,
+  selectedEdgeId: string | null
+): {
+  variant: EdgeVisualVariant
+  stroke: string
+  strokeWidth: number
+  opacity: number
+  dashed?: boolean
+} {
+  const highlightIds = new Set<string>()
+  if (focusId) {
+    getConnectedIds(snapshot, focusId).forEach((id) => highlightIds.add(id))
+    highlightIds.add(focusId)
+  }
+  const variant = classifyEdgeVariant(
+    edge,
+    snapshot,
+    focusId,
+    highlightIds,
+    edge.id === selectedEdgeId
+  )
+  return { variant, ...EDGE_STYLES[variant] }
+}
+
+function buildRadialOverrides(
+  snapshot: GraphSnapshot,
+  options: FlowAdapterOptions,
+  visibleIds: Set<string>,
+  childrenIndex: Map<string, import('../../../core/types').GraphNode[]>
+): Record<string, { x: number; y: number }> {
+  if (!isTreeGraphMode(options.graphOrganizationMode)) return {}
+
+  const radialOverrides: Record<string, { x: number; y: number }> = {}
+  for (const folder of snapshot.nodes) {
+    if (folder.kind !== 'folder') continue
+    if (!options.expandedFolderIds.has(folder.id)) continue
+    const center =
+      options.userPositions[folder.id] ??
+      snapshot.positions[folder.id] ?? { x: 0, y: 0 }
+    const children = getDirectChildren(snapshot, folder.id, childrenIndex)
+      .filter((c) => visibleIds.has(c.id))
+      .map((c) => c.id)
+    Object.assign(
+      radialOverrides,
+      computeRadialPositions(center, children, options.folderExpansionRadius ?? 82)
+    )
+  }
+  return radialOverrides
 }
 
 export function toFlowNodes(snapshot: GraphSnapshot, options: FlowAdapterOptions): Node[] {
-  const visibleIds = getVisibleNodeIds(snapshot, {
-    graphDepth: options.graphDepth,
-    layerVisibility: options.layerVisibility,
-    isolatedLayer: options.isolatedLayer,
-    focusNeighborhood: false,
-    hideLowImportance: options.hideLowImportance,
-    focusedNodeId: options.focusedNodeId,
-    selectedNodeId: options.selectedNodeId,
-    showFolders: options.showFolders,
-    expandedFolderIds: options.expandedFolderIds
-  })
-
-  const query = options.searchQuery.toLowerCase().trim()
-  const searchMatchIds = new Set<string>()
-
-  if (query) {
-    for (const node of snapshot.nodes) {
-      if (!visibleIds.has(node.id)) continue
-      if (
-        node.label.toLowerCase().includes(query) ||
-        node.path?.toLowerCase().includes(query) ||
-        node.meta?.exports?.some((e) => e.toLowerCase().includes(query))
-      ) {
-        searchMatchIds.add(node.id)
-      }
-    }
-  }
+  const childrenIndex = buildChildrenIndex(snapshot.nodes)
+  const renderable = getRenderableNodeIds(snapshot, options)
+  const query = options.searchQuery.trim()
 
   const focusId = options.focusedNodeId ?? options.selectedNodeId
   const neighborhood =
@@ -153,46 +243,17 @@ export function toFlowNodes(snapshot: GraphSnapshot, options: FlowAdapterOptions
       ? getNeighborhood(snapshot, focusId, 2)
       : null
 
-  const radialOverrides: Record<string, { x: number; y: number }> = {}
+  // When a node is selected, emphasize its directly connected files and gently
+  // de-emphasize everything else (Issue #1 — selection highlights relationships).
+  const selectionNeighbors =
+    options.selectedNodeId && !query
+      ? getNeighborhood(snapshot, options.selectedNodeId, 1)
+      : null
 
-  if (options.showFolders) {
-    for (const folder of snapshot.nodes.filter((n) => n.kind === 'folder')) {
-      if (!options.expandedFolderIds.has(folder.id)) continue
-      const center =
-        options.userPositions[folder.id] ??
-        snapshot.positions[folder.id] ?? { x: 0, y: 0 }
-      const children = getDirectChildren(snapshot, folder.id)
-        .filter((c) => visibleIds.has(c.id))
-        .map((c) => c.id)
-      Object.assign(
-        radialOverrides,
-        computeRadialPositions(center, children, 105)
-      )
-    }
-  }
+  const radialOverrides = buildRadialOverrides(snapshot, options, renderable, childrenIndex)
 
   return snapshot.nodes
-    .filter((node) => {
-      if (!visibleIds.has(node.id)) return false
-      if (
-        node.kind !== 'folder' &&
-        isNodeHiddenByCollapsedFolders(node, snapshot, options.expandedFolderIds)
-      ) {
-        return false
-      }
-      switch (options.filter) {
-        case 'files':
-          return node.kind === 'file' || node.kind === 'module'
-        case 'components':
-          return node.kind === 'component'
-        case 'imports':
-          return node.kind !== 'folder'
-        case 'folders':
-          return node.kind === 'folder'
-        default:
-          return node.kind !== 'folder' || options.showFolders
-      }
-    })
+    .filter((node) => renderable.has(node.id))
     .map((node) => {
       const pos =
         radialOverrides[node.id] ??
@@ -201,20 +262,31 @@ export function toFlowNodes(snapshot: GraphSnapshot, options: FlowAdapterOptions
         { x: 0, y: 0 }
       const isSelected = node.id === options.selectedNodeId
       const isFocused = node.id === focusId
+      const canDrag =
+        options.dragEnabledNodeIds.has(node.id) || isSelected
       const isEntry = node.isEntry || node.id === snapshot.entryNodeId
       const isFolder = node.kind === 'folder'
-      const folderExpanded = isFolder && options.expandedFolderIds.has(node.id)
       const archLayer = node.meta?.architectureLayer as ArchitectureLayerId | undefined
+      const folderExpanded = isFolder && options.expandedFolderIds.has(node.id)
 
+      const highlightStrength = query ? searchHighlightStrength(node, query) : 'none'
+      const isConnectedToSelection =
+        selectionNeighbors !== null && selectionNeighbors.has(node.id) && !isSelected
       const dimmed =
-        options.dimOnSearch && query.length > 0 && !searchMatchIds.has(node.id)
+        options.dimOnSearch && query.length > 0 && highlightStrength === 'none'
       const softDimmed =
-        !dimmed && neighborhood !== null && !neighborhood.has(node.id)
+        !dimmed &&
+        ((neighborhood !== null && !neighborhood.has(node.id)) ||
+          (selectionNeighbors !== null && !selectionNeighbors.has(node.id) && !isSelected))
+
+      const nodeHeight = isEntry ? FLOW_ENTRY_HEIGHT : FLOW_NODE_HEIGHT
 
       return {
         id: node.id,
         type: 'architecture',
         position: pos,
+        width: FLOW_NODE_WIDTH,
+        height: nodeHeight,
         zIndex: isEntry ? 10 : isSelected ? 6 : isFocused ? 4 : isFolder ? 2 : 1,
         data: {
           label: node.label,
@@ -222,41 +294,99 @@ export function toFlowNodes(snapshot: GraphSnapshot, options: FlowAdapterOptions
           path: node.path,
           meta: node.meta,
           architectureLayer: archLayer,
-          color: isEntry
-            ? KIND_COLORS.entry
-            : isFolder
-              ? KIND_COLORS.folder
-              : (archLayer && LAYER_COLORS[archLayer]) ||
-                KIND_COLORS[node.kind] ||
-                KIND_COLORS.file,
+          color: nodeDisplayColor(node, snapshot.entryNodeId),
           dimmed,
           softDimmed,
-          highlighted: query.length > 0 && searchMatchIds.has(node.id),
+          highlighted: highlightStrength !== 'none' || isConnectedToSelection,
+          searchHighlight: highlightStrength,
           focused: isFocused,
           selected: isSelected,
+          canDrag,
           isEntry,
           isFolder,
           folderExpanded,
           childCount: isFolder
-            ? getDirectChildren(snapshot, node.id).length
+            ? getDirectChildren(snapshot, node.id, childrenIndex).length
             : undefined,
           description: isFolder
             ? `Directory: ${node.path || node.label}`
             : inferFileDescription(node)
         },
+        selected: isSelected,
         draggable: true
       }
     })
 }
 
+/** Node IDs that should appear on canvas — shared by nodes and edges. */
+export function getRenderableNodeIds(
+  snapshot: GraphSnapshot,
+  options: FlowAdapterOptions
+): Set<string> {
+  const treeMode = isTreeGraphMode(options.graphOrganizationMode)
+  const visibleIds = getVisibleNodeIds(snapshot, {
+    graphDepth: options.graphDepth,
+    layerVisibility: options.layerVisibility,
+    isolatedLayer: options.isolatedLayer,
+    focusNeighborhood: false,
+    hideLowImportance: options.hideLowImportance,
+    focusedNodeId: options.focusedNodeId,
+    selectedNodeId: options.selectedNodeId,
+    graphOrganizationMode: options.graphOrganizationMode,
+    expandedFolderIds: options.expandedFolderIds,
+    maxRenderedNodes: options.maxRenderedNodes
+  })
+
+  // Architecture mode slice — only render the focused architectural layer.
+  // This is what stops the graph from dumping the whole project at once.
+  const modeIds =
+    options.architectureMode && options.architectureMode !== 'overview'
+      ? getModeNodeIds(snapshot, options.architectureMode)
+      : null
+
+  const renderable = new Set<string>()
+  for (const node of snapshot.nodes) {
+    if (!visibleIds.has(node.id)) continue
+    if (modeIds && node.kind !== 'folder' && !modeIds.has(node.id)) continue
+    if (
+      node.kind !== 'folder' &&
+      isNodeHiddenByCollapsedFolders(
+        node,
+        snapshot,
+        options.expandedFolderIds,
+        treeMode
+      )
+    ) {
+      continue
+    }
+    switch (options.filter) {
+      case 'files':
+        if (node.kind === 'file' || node.kind === 'module') renderable.add(node.id)
+        break
+      case 'components':
+        if (node.kind === 'component') renderable.add(node.id)
+        break
+      case 'imports':
+        if (node.kind !== 'folder') renderable.add(node.id)
+        break
+      case 'folders':
+        if (node.kind === 'folder') renderable.add(node.id)
+        break
+      default:
+        if (node.kind !== 'folder' || treeMode) renderable.add(node.id)
+    }
+  }
+  return renderable
+}
+
 export function toFlowEdges(
   snapshot: GraphSnapshot,
-  options: Omit<FlowAdapterOptions, 'dimOnSearch'> & { selectedEdgeId: string | null }
+  options: Omit<FlowAdapterOptions, 'dimOnSearch'> & {
+    selectedEdgeId: string | null
+    renderableNodeIds: Set<string>
+  }
 ): Edge[] {
-  const visibleNodeIds = new Set(
-    toFlowNodes(snapshot, { ...options, dimOnSearch: false }).map((n) => n.id)
-  )
-
+  const treeMode = isTreeGraphMode(options.graphOrganizationMode)
   const focusId = options.focusedNodeId ?? options.selectedNodeId
   const highlightIds = new Set<string>()
   if (focusId) {
@@ -264,47 +394,113 @@ export function toFlowEdges(
     highlightIds.add(focusId)
   }
 
+  const renderable = options.renderableNodeIds
+  const maxRelated = options.visibleRelatedConnections ?? 2
+  const visibleImportIds =
+    options.edgeDebugMode ? null : selectVisibleImportEdgeIds(snapshot, maxRelated, snapshot.entryNodeId)
+
+  // Resolve a node's on-canvas center so edges can attach to the side that faces
+  // the connected node (clean 4-side contact points instead of one center point).
+  const nodeById = new Map(snapshot.nodes.map((n) => [n.id, n]))
+  const centerOf = (id: string): { x: number; y: number } => {
+    const node = nodeById.get(id)
+    const pos = options.userPositions[id] ?? snapshot.positions[id] ?? { x: 0, y: 0 }
+    const h = node?.isEntry || id === snapshot.entryNodeId ? FLOW_ENTRY_HEIGHT : FLOW_NODE_HEIGHT
+    return { x: pos.x + FLOW_NODE_WIDTH / 2, y: pos.y + h / 2 }
+  }
+
   return snapshot.edges
     .filter((e) => {
+      if (options.edgeDebugMode) {
+        return renderable.has(e.source) && renderable.has(e.target)
+      }
       if (e.kind === 'contains') {
-        if (!options.showFolders) return false
-        // Only show contains edges when parent folder is expanded
+        if (!treeMode) return false
         const parentFolder = e.source.startsWith('folder:') ? e.source : null
         if (parentFolder && !options.expandedFolderIds.has(parentFolder)) return false
-        return visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target)
+        return renderable.has(e.source) && renderable.has(e.target)
       }
       if (e.kind === 'dependency') {
-        if (!options.showFolders) return false
-        return visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target)
+        if (!treeMode) return false
+        return renderable.has(e.source) && renderable.has(e.target)
       }
       if (e.kind !== 'import') return false
-      return visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target)
+      if (!renderable.has(e.source) || !renderable.has(e.target)) return false
+      if (visibleImportIds && !visibleImportIds.has(e.id)) return false
+      return true
     })
     .map((edge) => {
+      const handles = pickHandles(centerOf(edge.source), centerOf(edge.target))
+      if (options.edgeDebugMode) {
+        return {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          sourceHandle: handles.sourceHandle,
+          targetHandle: handles.targetHandle,
+          type: 'architecture',
+          zIndex: 2,
+          selectable: true,
+          animated: false,
+          style: {
+            stroke: 'rgba(255,64,64,0.98)',
+            strokeWidth: 2.8,
+            opacity: 1
+          },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 16,
+            height: 16,
+            color: 'rgba(255,64,64,0.98)'
+          },
+          data: {
+            kind: edge.kind,
+            variant: 'import' as EdgeVisualVariant,
+            meta: edge.meta
+          }
+        }
+      }
       const selected = edge.id === options.selectedEdgeId
       const variant = classifyEdgeVariant(edge, snapshot, focusId, highlightIds, selected)
       const styles = EDGE_STYLES[variant]
+      const importLabel =
+        options.showEdgeLabels && edge.kind === 'import'
+          ? (edge.meta?.importSource as string | undefined)
+          : undefined
 
       return {
         id: edge.id,
         source: edge.source,
         target: edge.target,
+        sourceHandle: handles.sourceHandle,
+        targetHandle: handles.targetHandle,
         type: 'architecture',
-        animated: variant === 'highlighted' || variant === 'selected',
-        selectable: variant !== 'contains',
+        zIndex: edge.kind === 'contains' ? 0 : 1,
+        label: importLabel,
+        labelStyle: importLabel
+          ? { fill: 'rgba(161,161,170,0.85)', fontSize: 9 }
+          : undefined,
+        labelBgStyle: importLabel
+          ? { fill: 'rgba(22,22,24,0.88)', fillOpacity: 0.92 }
+          : undefined,
+        // Edges are non-interactive and non-animated: animation forces continuous
+        // SVG repaints (flicker + tile memory). Relationship info lives in the
+        // node inspector instead.
+        animated: false,
+        selectable: false,
         style: {
           stroke: styles.stroke,
           strokeWidth: styles.strokeWidth,
           opacity: styles.opacity,
-          strokeDasharray: styles.dashed ? '4 4' : undefined
+          strokeDasharray: styles.dashed ? '6 4' : undefined
         },
         markerEnd:
           variant === 'contains'
             ? undefined
             : {
-                type: 'arrowclosed' as const,
-                width: 11,
-                height: 11,
+                type: MarkerType.ArrowClosed,
+                width: 14,
+                height: 14,
                 color: styles.stroke
               },
         data: {
@@ -318,6 +514,23 @@ export function toFlowEdges(
     })
 }
 
+/** Choose source/target handle sides from the relative position of two nodes. */
+function pickHandles(
+  s: { x: number; y: number },
+  t: { x: number; y: number }
+): { sourceHandle: string; targetHandle: string } {
+  const dx = t.x - s.x
+  const dy = t.y - s.y
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return dx >= 0
+      ? { sourceHandle: 's-right', targetHandle: 't-left' }
+      : { sourceHandle: 's-left', targetHandle: 't-right' }
+  }
+  return dy >= 0
+    ? { sourceHandle: 's-bottom', targetHandle: 't-top' }
+    : { sourceHandle: 's-top', targetHandle: 't-bottom' }
+}
+
 function getConnectedIds(snapshot: GraphSnapshot, nodeId: string): Set<string> {
   const ids = new Set<string>()
   for (const edge of snapshot.edges) {
@@ -328,7 +541,10 @@ function getConnectedIds(snapshot: GraphSnapshot, nodeId: string): Set<string> {
   return ids
 }
 
-export function findNodeByQuery(nodes: GraphNode[], query: string): GraphNode | null {
+export function findNodeByQuery(
+  nodes: import('../../../core/types').GraphNode[],
+  query: string
+) {
   const q = query.toLowerCase().trim()
   if (!q) return null
   return (

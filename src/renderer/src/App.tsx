@@ -1,10 +1,13 @@
-import { useCallback, useEffect } from 'react'
+import { lazy, Suspense, useCallback, useEffect } from 'react'
 import { ReactFlowProvider } from '@xyflow/react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { AppShell } from './components/layout/AppShell'
 import { ActivityBar } from './components/layout/ActivityBar'
 import { SecondarySidebar } from './components/layout/SecondarySidebar'
 import { GraphCanvas } from './components/graph/GraphCanvas'
+const NetworkGraphView = lazy(() =>
+  import('./components/graph/NetworkGraphView').then((m) => ({ default: m.NetworkGraphView }))
+)
 import { WelcomeScreen } from './components/welcome/WelcomeScreen'
 import { GraphToolbar } from './components/toolbar/GraphToolbar'
 import { CodeEditorView } from './components/code/CodeEditorView'
@@ -13,12 +16,14 @@ import { useGraphStore } from './state/graph-store'
 import { useSettingsStore } from './state/settings-store'
 import { findNodeByQuery } from './utils/flow-adapter'
 import type { LayoutMode } from '../../core/types'
+import { layoutRuntimeFromSettings } from './utils/layout-settings'
 
 export default function App() {
   const snapshot = useGraphStore((s) => s.snapshot)
   const isLoading = useGraphStore((s) => s.isLoading)
   const error = useGraphStore((s) => s.error)
   const viewMode = useGraphStore((s) => s.viewMode)
+  const graphViewMode = useGraphStore((s) => s.graphViewMode)
   const setLoading = useGraphStore((s) => s.setLoading)
   const setError = useGraphStore((s) => s.setError)
   const setSnapshot = useGraphStore((s) => s.setSnapshot)
@@ -30,6 +35,11 @@ export default function App() {
   const layoutMode = useGraphStore((s) => s.layoutMode)
   const setLayoutMode = useGraphStore((s) => s.setLayoutMode)
   const reset = useGraphStore((s) => s.reset)
+
+  useEffect(() => {
+    const settings = useSettingsStore.getState()
+    setLayoutMode(settings.defaultLayout)
+  }, [setLayoutMode])
 
   const handleOpenProject = useCallback(async () => {
     try {
@@ -47,9 +57,12 @@ export default function App() {
       }
 
       setSnapshot(result.snapshot)
-      const defaultLayout = useSettingsStore.getState().defaultLayout
-      setLayoutMode(defaultLayout)
-      const relaid = await window.prebase.relayout(defaultLayout)
+      const settings = useSettingsStore.getState()
+      setLayoutMode(settings.defaultLayout)
+      const relaid = await window.prebase.relayout(
+        settings.defaultLayout,
+        layoutRuntimeFromSettings(settings)
+      )
       if (relaid) setSnapshot(relaid)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
@@ -58,8 +71,15 @@ export default function App() {
   }, [setLoading, setError, setSnapshot])
 
   const handleRelayout = useCallback(async () => {
-    const updated = await window.prebase.relayout(layoutMode)
-    if (updated) setSnapshot(updated)
+    const settings = useSettingsStore.getState()
+    const updated = await window.prebase.relayout(
+      layoutMode,
+      layoutRuntimeFromSettings(settings)
+    )
+    if (updated) {
+      useGraphStore.getState().setInitialCameraDone(false)
+      setSnapshot(updated)
+    }
   }, [layoutMode, setSnapshot])
 
   useEffect(() => {
@@ -106,8 +126,16 @@ export default function App() {
         <SecondarySidebar
           onOpenProject={handleOpenProject}
           onRelayout={async (mode: LayoutMode) => {
-            const updated = await window.prebase.relayout(mode)
-            if (updated) setSnapshot(updated)
+            setLayoutMode(mode)
+            const settings = useSettingsStore.getState()
+            const updated = await window.prebase.relayout(
+              mode,
+              layoutRuntimeFromSettings(settings)
+            )
+            if (updated) {
+              useGraphStore.getState().setInitialCameraDone(false)
+              setSnapshot(updated)
+            }
           }}
         />
       )}
@@ -134,10 +162,22 @@ export default function App() {
               exit={{ opacity: 0 }}
               className="flex flex-1 relative min-h-0"
             >
-              <ReactFlowProvider>
-                <GraphCanvas />
-                <GraphToolbar onRelayout={handleRelayout} />
-              </ReactFlowProvider>
+              {graphViewMode === 'network' ? (
+                <Suspense
+                  fallback={
+                    <div className="flex-1 flex items-center justify-center text-text-muted text-sm">
+                      Loading network view…
+                    </div>
+                  }
+                >
+                  <NetworkGraphView />
+                </Suspense>
+              ) : (
+                <ReactFlowProvider>
+                  <GraphCanvas />
+                  <GraphToolbar onRelayout={handleRelayout} />
+                </ReactFlowProvider>
+              )}
             </motion.div>
           ) : (
             <motion.div
@@ -163,7 +203,7 @@ export default function App() {
         )}
 
         {isLoading && snapshot && (
-          <div className="absolute inset-0 bg-surface/60 backdrop-blur-sm flex items-center justify-center z-40">
+          <div className="absolute inset-0 bg-surface/85 flex items-center justify-center z-40">
             <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-surface-overlay border border-border-subtle">
               <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
               <span className="text-sm text-text-secondary">Updating architecture...</span>

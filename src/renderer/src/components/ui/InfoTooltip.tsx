@@ -50,7 +50,7 @@ export function InfoTooltip({ title, body, side = 'right' }: InfoTooltipProps) {
               exit={{ opacity: 0, y: 4, scale: 0.98 }}
               transition={{ duration: 0.15 }}
               style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 9999 }}
-              className="pointer-events-none w-56 p-3 rounded-xl border border-border-subtle bg-surface-overlay/95 backdrop-blur-xl shadow-panel"
+              className="pointer-events-none w-56 p-3 rounded-xl border border-border-subtle bg-surface-overlay shadow-panel"
               onMouseEnter={() => setOpen(true)}
               onMouseLeave={() => setOpen(false)}
             >

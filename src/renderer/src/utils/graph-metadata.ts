@@ -1,11 +1,55 @@
 import type { GraphEdge, GraphNode, GraphSnapshot } from '../../../core/types'
 
+export interface NodeConnection {
+  nodeId: string
+  label: string
+  path?: string
+  relationship: string
+  importSource?: string
+  isDynamic?: boolean
+}
+
 export interface NodeInspectorData {
   node: GraphNode
   incoming: GraphEdge[]
   outgoing: GraphEdge[]
   incomingLabels: string[]
   outgoingLabels: string[]
+  incomingConnections: NodeConnection[]
+  outgoingConnections: NodeConnection[]
+}
+
+function describeRelationship(
+  edge: GraphEdge,
+  direction: 'incoming' | 'outgoing',
+  other: GraphNode
+): string {
+  if (edge.meta?.isDynamic) return 'Dynamic import'
+  if (other.kind === 'component' || other.meta?.isComponent) {
+    return direction === 'outgoing' ? 'Imports component' : 'Imported by component'
+  }
+  if (other.meta?.architectureLayer === 'services' || other.kind === 'service') {
+    return direction === 'outgoing' ? 'Uses service' : 'Used as service'
+  }
+  return direction === 'outgoing' ? 'Import dependency' : 'Dependent import'
+}
+
+function connectionFromEdge(
+  snapshot: GraphSnapshot,
+  edge: GraphEdge,
+  direction: 'incoming' | 'outgoing'
+): NodeConnection | null {
+  const otherId = direction === 'incoming' ? edge.source : edge.target
+  const other = snapshot.nodes.find((n) => n.id === otherId)
+  if (!other) return null
+  return {
+    nodeId: other.id,
+    label: other.label,
+    path: other.path,
+    relationship: describeRelationship(edge, direction, other),
+    importSource: edge.meta?.importSource,
+    isDynamic: edge.meta?.isDynamic
+  }
 }
 
 export interface EdgeInspectorData {
@@ -29,12 +73,21 @@ export function getNodeInspectorData(
   const labelFor = (id: string) =>
     snapshot.nodes.find((n) => n.id === id)?.label ?? id.replace('file:', '')
 
+  const incomingConnections = incoming
+    .map((e) => connectionFromEdge(snapshot, e, 'incoming'))
+    .filter((c): c is NodeConnection => c !== null)
+  const outgoingConnections = outgoing
+    .map((e) => connectionFromEdge(snapshot, e, 'outgoing'))
+    .filter((c): c is NodeConnection => c !== null)
+
   return {
     node,
     incoming,
     outgoing,
     incomingLabels: incoming.map((e) => labelFor(e.source)),
-    outgoingLabels: outgoing.map((e) => labelFor(e.target))
+    outgoingLabels: outgoing.map((e) => labelFor(e.target)),
+    incomingConnections,
+    outgoingConnections
   }
 }
 

@@ -1,7 +1,11 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
-import { motion } from 'framer-motion'
 import { Box, ChevronRight, FileCode, Folder, FolderOpen, Layers, Star, Zap } from 'lucide-react'
+import {
+  FLOW_ENTRY_HEIGHT,
+  FLOW_NODE_HEIGHT,
+  FLOW_NODE_WIDTH
+} from '../../utils/flow-adapter'
 
 export interface ArchitectureNodeData {
   label: string
@@ -11,8 +15,10 @@ export interface ArchitectureNodeData {
   dimmed?: boolean
   softDimmed?: boolean
   highlighted?: boolean
+  searchHighlight?: 'none' | 'soft' | 'strong'
   focused?: boolean
   selected?: boolean
+  canDrag?: boolean
   isEntry?: boolean
   isFolder?: boolean
   folderExpanded?: boolean
@@ -25,9 +31,12 @@ export interface ArchitectureNodeData {
   }
 }
 
-const NODE_WIDTH = 168
-const NODE_HEIGHT = 52
-const ENTRY_HEIGHT = 58
+const SIDE_HANDLES = [
+  { side: 'top', position: Position.Top },
+  { side: 'right', position: Position.Right },
+  { side: 'bottom', position: Position.Bottom },
+  { side: 'left', position: Position.Left }
+] as const
 
 const kindIcons: Record<string, typeof FileCode> = {
   folder: Folder,
@@ -38,9 +47,12 @@ const kindIcons: Record<string, typeof FileCode> = {
   module: FileCode
 }
 
-function ArchitectureNodeComponent({ data }: NodeProps) {
+function ArchitectureNodeComponent({ data, selected: rfSelected }: NodeProps) {
   const d = data as unknown as ArchitectureNodeData
+  const [hovered, setHovered] = useState(false)
+  const isSelected = d.selected || rfSelected
   const isFolder = d.isFolder || d.kind === 'folder'
+  const canDrag = d.canDrag === true
   const Icon = d.isEntry
     ? Star
     : isFolder
@@ -50,131 +62,153 @@ function ArchitectureNodeComponent({ data }: NodeProps) {
       : (kindIcons[d.kind] ?? FileCode)
 
   const opacity = d.dimmed ? 0.6 : d.softDimmed ? 0.82 : 1
+  const nodeHeight = d.isEntry ? FLOW_ENTRY_HEIGHT : FLOW_NODE_HEIGHT
 
   let boxShadow: string
-  if (d.selected) {
-    boxShadow =
-      '0 0 0 1.5px rgba(45,212,191,0.45), 0 4px 28px rgba(45,212,191,0.22), 0 8px 40px rgba(0,0,0,0.3)'
+  if (isSelected) {
+    boxShadow = '0 0 0 2px rgba(45,212,191,0.7)'
+  } else if (hovered) {
+    boxShadow = '0 0 0 1px rgba(45,212,191,0.38)'
   } else if (d.focused) {
-    boxShadow = '0 0 0 1px rgba(45,212,191,0.2), 0 3px 16px rgba(45,212,191,0.08), 0 2px 12px rgba(0,0,0,0.22)'
+    boxShadow = '0 0 0 1px rgba(45,212,191,0.2)'
+  } else if (d.searchHighlight === 'strong') {
+    boxShadow = '0 0 0 1.5px rgba(45,212,191,0.45)'
+  } else if (d.searchHighlight === 'soft') {
+    boxShadow = '0 0 0 1px rgba(45,212,191,0.24)'
   } else if (d.highlighted) {
-    boxShadow = '0 0 0 1px rgba(45,212,191,0.14), 0 2px 14px rgba(0,0,0,0.2)'
+    boxShadow = '0 0 0 1px rgba(45,212,191,0.16)'
   } else if (d.isEntry) {
-    boxShadow = '0 0 28px rgba(245,158,11,0.12), 0 4px 16px rgba(0,0,0,0.22)'
+    boxShadow = '0 0 0 1px rgba(245,158,11,0.28)'
   } else if (isFolder && d.folderExpanded) {
-    boxShadow = '0 0 0 1px rgba(113,113,122,0.25), 0 3px 14px rgba(0,0,0,0.2)'
+    boxShadow = '0 0 0 1px rgba(113,113,122,0.22)'
   } else {
-    boxShadow = '0 2px 10px rgba(0,0,0,0.18)'
+    boxShadow = 'none'
   }
 
   let background: string
-  if (d.selected) {
-    background = 'linear-gradient(135deg, rgba(45,212,191,0.2) 0%, rgba(16,185,129,0.14) 100%)'
+  if (isSelected) {
+    background = 'rgba(45,212,191,0.16)'
   } else if (d.isEntry) {
     background = 'rgba(245,158,11,0.06)'
   } else if (isFolder) {
-    background = d.folderExpanded
-      ? 'rgba(36,36,40,0.92)'
-      : 'rgba(22, 22, 24, 0.94)'
-  } else if (d.highlighted && !d.selected) {
+    background = d.folderExpanded ? 'rgba(36,36,40,0.92)' : 'rgba(22, 22, 24, 0.94)'
+  } else if (d.searchHighlight === 'strong' && !isSelected) {
+    background = 'rgba(45,212,191,0.12)'
+  } else if (d.searchHighlight === 'soft' && !isSelected) {
     background = 'rgba(45,212,191,0.07)'
+  } else if (d.highlighted && !isSelected) {
+    background = 'rgba(45,212,191,0.06)'
   } else {
     background = 'rgba(22, 22, 24, 0.94)'
   }
 
   let borderColor: string
-  if (d.selected) {
-    borderColor = 'rgba(45,212,191,0.55)'
-  } else if (d.focused && !d.selected) {
-    borderColor = 'rgba(45,212,191,0.28)'
+  if (isSelected) {
+    borderColor = 'rgba(45,212,191,0.78)'
+  } else if (hovered) {
+    borderColor = 'rgba(45,212,191,0.4)'
+  } else if (d.focused && !isSelected) {
+    borderColor = 'rgba(45,212,191,0.26)'
   } else if (d.isEntry) {
-    borderColor = 'rgba(245,158,11,0.38)'
+    borderColor = 'rgba(245,158,11,0.36)'
   } else if (isFolder) {
-    borderColor = d.folderExpanded ? 'rgba(161,161,170,0.28)' : 'rgba(255,255,255,0.08)'
-  } else if (d.highlighted && !d.selected) {
-    borderColor = 'rgba(45,212,191,0.22)'
+    borderColor = d.folderExpanded ? 'rgba(161,161,170,0.26)' : 'rgba(255,255,255,0.08)'
+  } else if (d.searchHighlight === 'strong' && !isSelected) {
+    borderColor = 'rgba(45,212,191,0.5)'
+  } else if (d.searchHighlight === 'soft' && !isSelected) {
+    borderColor = 'rgba(45,212,191,0.28)'
+  } else if (d.highlighted && !isSelected) {
+    borderColor = 'rgba(45,212,191,0.2)'
   } else {
     borderColor = 'rgba(255,255,255,0.06)'
   }
 
+  const cursorClass = canDrag ? 'prebase-drag-ready' : 'prebase-nodrag'
+  const tooltip = isFolder
+    ? `${d.label} — click to select, click again to ${d.folderExpanded ? 'collapse' : 'expand'}`
+    : [d.path, d.description].filter(Boolean).join('\n\n')
+
   return (
     <>
-      <Handle type="target" position={Position.Left} className="!opacity-0 !w-2 !h-2" />
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity, scale: 1 }}
-        whileHover={{
-          scale: 1.025,
-          boxShadow: d.selected
-            ? boxShadow
-            : '0 0 0 1px rgba(45,212,191,0.28), 0 3px 18px rgba(45,212,191,0.1), 0 4px 20px rgba(0,0,0,0.24)'
-        }}
-        transition={{ type: 'spring', stiffness: 420, damping: 28 }}
-        title={
-          isFolder
-            ? `${d.label} — click to ${d.folderExpanded ? 'collapse' : 'expand'}`
-            : d.path
-              ? `${d.path}\n\n${d.description ?? ''}`
-              : d.description
-        }
-        className="group relative flex items-center gap-2 rounded-xl backdrop-blur-md cursor-pointer select-none px-3 py-2.5 border"
+      {SIDE_HANDLES.map(({ side, position }) => (
+        <Handle
+          key={`s-${side}`}
+          id={`s-${side}`}
+          type="source"
+          position={position}
+          isConnectable={false}
+          className="!opacity-0 !w-1.5 !h-1.5 !border-0 !bg-transparent !pointer-events-none"
+        />
+      ))}
+      {SIDE_HANDLES.map(({ side, position }) => (
+        <Handle
+          key={`t-${side}`}
+          id={`t-${side}`}
+          type="target"
+          position={position}
+          isConnectable={false}
+          className="!opacity-0 !w-1.5 !h-1.5 !border-0 !bg-transparent !pointer-events-none"
+        />
+      ))}
+      <div
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        title={tooltip || undefined}
+        className={`architecture-node relative flex flex-col items-center justify-center gap-0.5 rounded-md select-none px-1 py-1 border ${cursorClass} ${
+          isSelected ? 'ring-1 ring-teal-400/35' : hovered ? 'ring-1 ring-teal-400/18' : ''
+        }`}
         style={{
-          width: NODE_WIDTH,
-          minHeight: d.isEntry ? ENTRY_HEIGHT : NODE_HEIGHT,
-          maxHeight: d.isEntry ? ENTRY_HEIGHT : NODE_HEIGHT,
+          width: FLOW_NODE_WIDTH,
+          height: nodeHeight,
+          minHeight: nodeHeight,
+          maxHeight: nodeHeight,
           background,
           borderColor,
           boxShadow,
-          transition: 'background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease'
+          opacity,
+          transition:
+            'background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease'
         }}
       >
         {isFolder && (
           <ChevronRight
-            className="w-3 h-3 text-text-muted shrink-0 transition-transform duration-200"
+            className="absolute left-1 top-1 w-2.5 h-2.5 text-text-muted shrink-0 transition-transform duration-200"
             style={{ transform: d.folderExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
           />
         )}
         <div
-          className="flex items-center justify-center w-7 h-7 rounded-lg shrink-0 transition-colors duration-150"
+          className="flex items-center justify-center w-6 h-6 rounded shrink-0"
           style={{ backgroundColor: `${d.color}1a` }}
         >
-          <Icon className="w-3.5 h-3.5" style={{ color: d.color }} />
+          <Icon className="w-3 h-3" style={{ color: d.color }} />
         </div>
-        <div className="flex flex-col min-w-0 flex-1">
-          <span className="text-xs font-medium truncate leading-tight text-text-primary">
-            {d.label}
+        <span
+          className={`text-[9px] font-medium truncate leading-tight text-center w-full px-0.5 ${
+            isSelected ? 'text-teal-50' : 'text-text-primary'
+          }`}
+        >
+          {d.label}
+        </span>
+        {d.isEntry ? (
+          <span className="text-[7px] text-amber-400/80 uppercase tracking-wider -mt-0.5">
+            Entry
           </span>
-          {d.isEntry ? (
-            <span className="text-[9px] text-amber-400/80 uppercase tracking-wider mt-0.5">
-              Entry
-            </span>
-          ) : isFolder ? (
-            <span className="text-[10px] text-text-muted mt-0.5">
-              {d.childCount ?? 0} items · {d.folderExpanded ? 'expanded' : 'collapsed'}
-            </span>
-          ) : (
-            <span
-              className="text-[10px] truncate leading-tight mt-0.5"
-              style={{ color: d.selected ? 'rgba(45,212,191,0.7)' : 'rgba(161,161,170,0.8)' }}
-            >
-              {d.path?.split('/').slice(-2).join('/') ?? ''}
-            </span>
-          )}
-        </div>
+        ) : isFolder ? (
+          <span className="text-[8px] text-text-muted -mt-0.5">{d.childCount ?? 0} items</span>
+        ) : null}
         {d.meta?.imports && d.meta.imports.length > 0 && !d.isEntry && !isFolder && (
           <span
-            className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] border"
+            className="absolute -top-1 -right-1 flex h-3 min-w-3 items-center justify-center rounded-full px-0.5 text-[7px] border"
             style={{
-              background: d.selected ? 'rgba(45,212,191,0.18)' : 'rgba(36,36,40,1)',
-              borderColor: d.selected ? 'rgba(45,212,191,0.35)' : 'rgba(255,255,255,0.08)',
-              color: d.selected ? 'rgba(45,212,191,0.9)' : 'rgba(161,161,170,0.9)'
+              background: isSelected ? 'rgba(45,212,191,0.2)' : 'rgba(36,36,40,1)',
+              borderColor: isSelected ? 'rgba(45,212,191,0.4)' : 'rgba(255,255,255,0.08)',
+              color: isSelected ? 'rgba(45,212,191,0.92)' : 'rgba(161,161,170,0.88)'
             }}
           >
             {d.meta.imports.length}
           </span>
         )}
-      </motion.div>
-      <Handle type="source" position={Position.Right} className="!opacity-0 !w-2 !h-2" />
+      </div>
     </>
   )
 }

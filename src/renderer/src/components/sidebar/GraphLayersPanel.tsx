@@ -1,11 +1,13 @@
 import { Eye, EyeOff, Focus, Layers } from 'lucide-react'
 import { ARCHITECTURE_LAYERS, countNodesPerLayer } from '../../../../core/utils/architecture-layers'
 import { useGraphStore } from '../../state/graph-store'
+import { useSettingsStore } from '../../state/settings-store'
 import { InfoTooltip } from '../ui/InfoTooltip'
 import {
   FOCUS_NEIGHBORHOOD_HELP,
   HIDE_LOW_IMPORTANCE_HELP,
-  LAYERS_PANEL_HELP
+  LAYERS_PANEL_HELP,
+  VISIBLE_RELATED_CONNECTIONS_HELP
 } from '../../constants/graph-help'
 
 export function GraphLayersPanel() {
@@ -19,6 +21,8 @@ export function GraphLayersPanel() {
   const setIsolatedLayer = useGraphStore((s) => s.setIsolatedLayer)
   const setFocusNeighborhood = useGraphStore((s) => s.setFocusNeighborhood)
   const setHideLowImportance = useGraphStore((s) => s.setHideLowImportance)
+  const visibleRelatedConnections = useSettingsStore((s) => s.visibleRelatedConnections)
+  const setVisibleRelatedConnections = useSettingsStore((s) => s.setVisibleRelatedConnections)
 
   if (!snapshot) return null
 
@@ -102,6 +106,35 @@ export function GraphLayersPanel() {
       </div>
 
       <div className="space-y-1.5 pt-1 border-t border-border-subtle">
+        <div className="space-y-1 titlebar-no-drag">
+          <div className="flex items-center justify-between text-[11px] text-text-secondary">
+            <span className="flex items-center gap-1">
+              Visible related connections
+              <InfoTooltip
+                title={VISIBLE_RELATED_CONNECTIONS_HELP.title}
+                body={VISIBLE_RELATED_CONNECTIONS_HELP.body}
+                side="bottom"
+              />
+            </span>
+            <span className="text-[10px] text-text-muted tabular-nums">{visibleRelatedConnections}</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={2}
+            step={1}
+            value={visibleRelatedConnections}
+            onChange={(e) =>
+              setVisibleRelatedConnections(Number(e.target.value) as 0 | 1 | 2)
+            }
+            className="w-full accent-teal-400"
+            aria-label="Visible related connections"
+          />
+          <p className="text-[9px] text-text-muted leading-snug">
+            Root link always shown · up to {visibleRelatedConnections} extra ranked link
+            {visibleRelatedConnections === 1 ? '' : 's'} per file
+          </p>
+        </div>
         <label className="flex items-center justify-between text-[11px] text-text-secondary cursor-pointer titlebar-no-drag">
           <span className="flex items-center gap-1">
             Focus neighborhood

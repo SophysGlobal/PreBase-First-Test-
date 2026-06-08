@@ -15,7 +15,7 @@ export function AiChatBubble() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.97 }}
             transition={{ type: 'spring', stiffness: 380, damping: 28 }}
-            className="w-[min(300px,calc(100vw-4rem))] rounded-2xl border border-border-subtle bg-surface-overlay/80 backdrop-blur-xl shadow-panel overflow-hidden"
+            className="w-[min(300px,calc(100vw-4rem))] rounded-2xl border border-border-subtle bg-surface-overlay shadow-panel overflow-hidden"
             style={{
               boxShadow: 'var(--shadow-panel), 0 0 32px rgba(45, 212, 191, 0.08)'
             }}
@@ -63,7 +63,7 @@ export function AiChatBubble() {
         whileHover={{ scale: 1.04 }}
         whileTap={{ scale: 0.97 }}
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2.5 px-4 py-2.5 rounded-full border border-border-subtle bg-surface-overlay/75 backdrop-blur-md text-text-secondary hover:text-text-primary hover:border-accent/35 transition-colors shadow-panel"
+        className="flex items-center gap-2.5 px-4 py-2.5 rounded-full border border-border-subtle bg-surface-overlay text-text-secondary hover:text-text-primary hover:border-accent/35 transition-colors shadow-panel"
         style={{ boxShadow: 'var(--shadow-panel), 0 0 24px rgba(45, 212, 191, 0.06)' }}
       >
         <Sparkles className="w-4 h-4 text-accent" />

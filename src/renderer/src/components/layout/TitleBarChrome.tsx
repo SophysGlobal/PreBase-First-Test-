@@ -11,7 +11,7 @@ export function TitleBarChrome() {
 
   return (
     <header
-      className={`app-titlebar shrink-0 flex items-center border-b border-border-subtle bg-surface/95 backdrop-blur-md z-50 ${
+      className={`app-titlebar shrink-0 flex items-center border-b border-border-subtle bg-surface z-50 ${
         isMac ? 'app-titlebar--mac' : 'app-titlebar--default'
       }`}
     >

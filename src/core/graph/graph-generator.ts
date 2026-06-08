@@ -7,11 +7,15 @@ import type {
   ParseResult
 } from '../types'
 import {
+  buildImportResolutionContext,
+  resolveImportWithContext
+} from '../utils/import-resolution'
+import {
   folderIdForPath,
   getParentFolderPath,
-  nodeIdForPath,
-  resolveImportPath
+  nodeIdForPath
 } from '../utils/paths'
+import { inferLanguageFromPath, isMetadataFile } from '../utils/project-files'
 import type { PathMappings } from '../utils/tsconfig-paths'
 
 export interface GraphGeneratorOptions {
@@ -67,9 +71,15 @@ export class GraphGenerator {
     }
 
     if (this.options.includeFolders) {
-      ensureFolder('')
+      // Folders are created only as ancestors of scanned files — no synthetic root.
     }
 
+    const resolutionCtx = buildImportResolutionContext(projectPath, results)
+
+    // ── Pass 1: create a real node for EVERY scanned file ────────────────
+    // This must happen before import resolution so that a file imported by an
+    // earlier-processed file is never left as a stub `module` node (which would
+    // drop it from the completeness audit and lose its real metadata).
     for (const result of results) {
       const fileId = nodeIdForPath(result.relativePath)
       if (!nodeIds.has(fileId)) {
@@ -92,7 +102,8 @@ export class GraphGenerator {
             exports: result.exports.map((e) => e.name),
             imports: result.imports.map((i) => i.source),
             isComponent: result.isComponentFile,
-            language: result.relativePath.split('.').pop(),
+            language: inferLanguageFromPath(result.relativePath),
+            isMetadata: isMetadataFile(result.relativePath),
             functionCount: result.functions.length,
             componentCount: result.components.length
           }
@@ -132,27 +143,53 @@ export class GraphGenerator {
           })
         }
       }
+    }
 
+    // ── Pass 2: resolve imports into edges ───────────────────────────────
+    // Targets that are themselves scanned files already exist as proper nodes
+    // (from pass 1); only genuinely external/unscanned targets become `module`
+    // stub nodes here.
+    for (const result of results) {
+      const fileId = nodeIdForPath(result.relativePath)
       for (const imp of result.imports) {
-        const resolved = resolveImportPath(
+        const resolved = resolveImportWithContext(
           projectPath,
           result.relativePath,
           imp.source,
-          this.options.pathMappings
+          this.options.pathMappings,
+          resolutionCtx
         )
         if (!resolved) continue
         const targetId = nodeIdForPath(resolved)
+        if (targetId === fileId) continue
         if (!nodeIds.has(targetId)) {
           nodeIds.add(targetId)
+          const parentFolder = getParentFolderPath(resolved)
+          if (this.options.includeFolders && parentFolder !== null) {
+            ensureFolder(parentFolder)
+          }
           nodes.push({
             id: targetId,
             kind: 'module',
             label: basename(resolved),
             path: resolved,
+            parentId:
+              this.options.includeFolders && parentFolder !== null
+                ? folderIdForPath(parentFolder)
+                : undefined,
             meta: { imports: [], exports: [] }
           })
+          if (this.options.includeFolders && parentFolder !== null) {
+            edges.push({
+              id: `contains:${folderIdForPath(parentFolder)}->${targetId}`,
+              source: folderIdForPath(parentFolder),
+              target: targetId,
+              kind: 'contains'
+            })
+          }
         }
         const edgeId = `import:${fileId}->${targetId}:${imp.source}`
+        if (nodeIds.has(edgeId)) continue
         const isDynamic = imp.source.includes('?') || imp.specifiers.includes('dynamic')
         edges.push({
           id: edgeId,
@@ -170,6 +207,10 @@ export class GraphGenerator {
       }
     }
 
+    if (this.options.includeFolders) {
+      this.pruneEmptyFolders(nodes, edges)
+    }
+
     this.addFolderDependencyEdges(nodes, edges)
 
     return {
@@ -178,6 +219,48 @@ export class GraphGenerator {
       projectPath,
       projectName,
       scannedAt: Date.now()
+    }
+  }
+
+  /** Remove folders with no files or nested folders containing files. */
+  private pruneEmptyFolders(nodes: GraphNode[], edges: GraphEdge[]): void {
+    const folderHasContent = (folderId: string): boolean => {
+      for (const n of nodes) {
+        if (n.parentId !== folderId) continue
+        if (n.kind !== 'folder') return true
+        if (folderHasContent(n.id)) return true
+      }
+      return false
+    }
+
+    let changed = true
+    while (changed) {
+      changed = false
+      for (let i = nodes.length - 1; i >= 0; i--) {
+        const n = nodes[i]
+        if (n.kind !== 'folder') continue
+        if (!folderHasContent(n.id)) {
+          nodes.splice(i, 1)
+          changed = true
+        }
+      }
+    }
+
+    const validIds = new Set(nodes.map((n) => n.id))
+    for (let i = edges.length - 1; i >= 0; i--) {
+      if (!validIds.has(edges[i].source) || !validIds.has(edges[i].target)) {
+        edges.splice(i, 1)
+      }
+    }
+
+    for (const n of nodes) {
+      if (!n.parentId || validIds.has(n.parentId)) continue
+      let p: string | undefined = n.parentId
+      while (p && !validIds.has(p)) {
+        const parent = nodes.find((x) => x.id === p)
+        p = parent?.parentId
+      }
+      n.parentId = p && validIds.has(p) ? p : undefined
     }
   }
 

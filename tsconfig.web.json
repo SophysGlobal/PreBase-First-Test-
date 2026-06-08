@@ -24,6 +24,8 @@
   "include": [
     "src/renderer/src/**/*",
     "src/core/types.ts",
+    "src/core/constants/supported-languages.ts",
+    "src/core/layout/dependency-depth.ts",
     "src/core/layout/hierarchy-layout.ts",
     "src/core/utils/architecture-layers.ts",
     "src/preload/index.ts"

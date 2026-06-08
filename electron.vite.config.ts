@@ -17,7 +17,8 @@ export default defineConfig({
   renderer: {
     resolve: {
       alias: {
-        '@renderer': resolve('src/renderer/src')
+        '@renderer': resolve('src/renderer/src'),
+        '@core': resolve('src/core')
       }
     },
     worker: {
@@ -25,6 +26,17 @@ export default defineConfig({
     },
     optimizeDeps: {
       include: ['monaco-editor']
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('react-force-graph') || id.includes('force-graph') || id.includes('d3-')) {
+              return 'force-graph'
+            }
+          }
+        }
+      }
     },
     plugins: [react()]
   }
