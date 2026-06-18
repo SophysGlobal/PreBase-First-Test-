@@ -16,6 +16,7 @@ import { useGraphStore } from './state/graph-store'
 import { useSettingsStore } from './state/settings-store'
 import { findNodeByQuery } from './utils/flow-adapter'
 import type { LayoutMode } from '../../core/types'
+import { computeClientLayout } from './utils/arch-layout-client'
 import { layoutRuntimeFromSettings } from './utils/layout-settings'
 
 export default function App() {
@@ -70,17 +71,19 @@ export default function App() {
     }
   }, [setLoading, setError, setSnapshot])
 
-  const handleRelayout = useCallback(async () => {
-    const settings = useSettingsStore.getState()
-    const updated = await window.prebase.relayout(
-      layoutMode,
-      layoutRuntimeFromSettings(settings)
-    )
-    if (updated) {
-      useGraphStore.getState().setInitialCameraDone(false)
-      setSnapshot(updated)
-    }
-  }, [layoutMode, setSnapshot])
+  const handleRelayout = useCallback(
+    async (mode?: LayoutMode, resetCamera = false) => {
+      const snapshot = useGraphStore.getState().snapshot
+      if (!snapshot) return
+      const settings = useSettingsStore.getState()
+      const layoutModeToUse = mode ?? layoutMode
+      const runtime = layoutRuntimeFromSettings(settings)
+      const positions = computeClientLayout(snapshot, layoutModeToUse, runtime)
+      useGraphStore.getState().applyLayoutPositions(positions, { resetCamera })
+      void window.prebase.relayout(layoutModeToUse, runtime, { broadcast: false })
+    },
+    [layoutMode]
+  )
 
   useEffect(() => {
     const unsubFull = window.prebase.onGraphFull((s) => setSnapshot(s))
@@ -112,6 +115,7 @@ export default function App() {
         setFocusedNodeId(null)
         setSelectedNodeId(null)
         setSelectedEdgeId(null)
+        useGraphStore.getState().setSelectedRingKey(null)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -127,15 +131,7 @@ export default function App() {
           onOpenProject={handleOpenProject}
           onRelayout={async (mode: LayoutMode) => {
             setLayoutMode(mode)
-            const settings = useSettingsStore.getState()
-            const updated = await window.prebase.relayout(
-              mode,
-              layoutRuntimeFromSettings(settings)
-            )
-            if (updated) {
-              useGraphStore.getState().setInitialCameraDone(false)
-              setSnapshot(updated)
-            }
+            await handleRelayout(mode, true)
           }}
         />
       )}
@@ -175,7 +171,7 @@ export default function App() {
               ) : (
                 <ReactFlowProvider>
                   <GraphCanvas />
-                  <GraphToolbar onRelayout={handleRelayout} />
+                  <GraphToolbar onRelayout={() => void handleRelayout(undefined, false)} />
                 </ReactFlowProvider>
               )}
             </motion.div>

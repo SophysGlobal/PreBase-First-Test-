@@ -1,3 +1,5 @@
+import type { LayoutOrganizationMethod } from './layout-organization'
+
 /** Runtime layout tuning passed from settings into the layout engine. */
 export interface LayoutRuntimeConfig {
   layerRadiusScale: number
@@ -7,15 +9,18 @@ export interface LayoutRuntimeConfig {
   scatterRelaxIterations: number
   /** Multiplier from sidebar spacing control (compact / balanced / spacious). */
   spacingScale: number
+  /** How files are ranked into rings/tiers (hierarchy & pyramid). */
+  organizationMethod: LayoutOrganizationMethod
 }
 
 export const DEFAULT_LAYOUT_RUNTIME: LayoutRuntimeConfig = {
   layerRadiusScale: 1,
   maxNodesPerLayer: 12,
-  layerGap: 168,
-  centerClearance: 140,
+  layerGap: 128,
+  centerClearance: 100,
   scatterRelaxIterations: 22,
-  spacingScale: 1
+  spacingScale: 1,
+  organizationMethod: 'dependency-depth'
 }
 
 export function mergeLayoutRuntime(

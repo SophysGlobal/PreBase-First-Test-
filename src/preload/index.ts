@@ -7,7 +7,11 @@ export interface PrebaseAPI {
   openProject: (path: string) => Promise<{ success: boolean; snapshot?: GraphSnapshot; error?: string }>
   closeProject: () => Promise<{ success: boolean }>
   getSnapshot: () => Promise<GraphSnapshot | null>
-  relayout: (mode: LayoutMode, runtime?: Partial<LayoutRuntimeConfig>) => Promise<GraphSnapshot | null>
+  relayout: (
+    mode: LayoutMode,
+    runtime?: Partial<LayoutRuntimeConfig>,
+    options?: { broadcast?: boolean }
+  ) => Promise<GraphSnapshot | null>
   readFile: (relativePath: string) => Promise<string | null>
   onGraphFull: (callback: (snapshot: GraphSnapshot) => void) => () => void
   onGraphIncremental: (callback: (update: IncrementalUpdate) => void) => () => void
@@ -18,7 +22,7 @@ const api: PrebaseAPI = {
   openProject: (path) => ipcRenderer.invoke('project:open', path),
   closeProject: () => ipcRenderer.invoke('project:close'),
   getSnapshot: () => ipcRenderer.invoke('project:get-snapshot'),
-  relayout: (mode, runtime) => ipcRenderer.invoke('graph:relayout', mode, runtime),
+  relayout: (mode, runtime, options) => ipcRenderer.invoke('graph:relayout', mode, runtime, options),
   readFile: (relativePath) => ipcRenderer.invoke('file:read', relativePath),
   onGraphFull: (callback) => {
     const handler = (_: Electron.IpcRendererEvent, snapshot: GraphSnapshot) => callback(snapshot)

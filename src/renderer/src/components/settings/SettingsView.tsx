@@ -201,14 +201,6 @@ export function SettingsView() {
                     className="w-32 accent-teal-400"
                   />
                 </Row>
-                <Row label="Layer labels" hint="Ring labels in hierarchy; level labels in pyramid.">
-                  <input
-                    type="checkbox"
-                    checked={settings.showHierarchyLabels}
-                    onChange={(e) => settings.setShowHierarchyLabels(e.target.checked)}
-                    className="accent-teal-400"
-                  />
-                </Row>
                 <Row label="Edge import labels" hint="Show import paths on dependency edges.">
                   <input
                     type="checkbox"

@@ -93,8 +93,13 @@ app.whenReady().then(() => {
 
   ipcMain.handle(
     'graph:relayout',
-    async (_, mode: LayoutMode, runtime?: import('../core/layout/layout-config').LayoutRuntimeConfig) => {
-      const snapshot = await projectService.relayout(mode, runtime)
+    async (
+      _,
+      mode: LayoutMode,
+      runtime?: import('../core/layout/layout-config').LayoutRuntimeConfig,
+      options?: { broadcast?: boolean }
+    ) => {
+      const snapshot = await projectService.relayout(mode, runtime, options)
       return snapshot
     }
   )

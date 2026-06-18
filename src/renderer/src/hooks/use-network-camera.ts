@@ -12,7 +12,8 @@ const DAMPING = 0.878
 const MAX_ANGULAR_VEL = 0.062
 const STOP_EPSILON = 0.0001
 const ROT_SENSITIVITY = 1
-const DRAG_THRESHOLD = 2
+/** Pixels of movement before a gesture counts as drag/rotation (not click). */
+const DRAG_THRESHOLD = 5
 
 export type NetworkDragDirection = 'natural' | 'inverted'
 
@@ -21,7 +22,8 @@ export interface OrbitAttachOptions {
   onArm?: () => void
   onDragStart?: () => void
   onDragEnd?: (lastAngular: { ax: number; ay: number; az: number; angle: number }) => void
-  isPointerOverNode?: (clientX: number, clientY: number) => boolean
+  /** Fired on pointerup when movement stayed below drag threshold (click/tap). */
+  onTap?: (clientX: number, clientY: number) => void
   dragDirection?: NetworkDragDirection
 }
 
@@ -94,7 +96,7 @@ export function useNetworkOrbit(reduceMotion: boolean) {
       const applyArcballDelta = (dx: number, dy: number) => {
         const rect = viewportRef.current ?? viewportRect()
         if (!rect.width || !rect.height) return
-        const inverted = optionsRef.current.dragDirection === 'natural'
+        const inverted = optionsRef.current.dragDirection === 'inverted'
         const deltaQ = mapScreenDragToArcball(dx, dy, rect, ROT_SENSITIVITY, inverted)
         orientationRef.current = quatMultiply(deltaQ, orientationRef.current)
         const ax = deltaQ.x
@@ -147,7 +149,11 @@ export function useNetworkOrbit(reduceMotion: boolean) {
         if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) {
           return
         }
+        const tap = !didRotateRef.current && movedRef.current < DRAG_THRESHOLD
+        const x = e.clientX
+        const y = e.clientY
         finishGesture()
+        if (tap) optionsRef.current.onTap?.(x, y)
       }
 
       const onPointerDown = (e: PointerEvent) => {
@@ -155,8 +161,6 @@ export function useNetworkOrbit(reduceMotion: boolean) {
         if (!pointerInViewport(e.clientX, e.clientY)) return
 
         didRotateRef.current = false
-        if (optionsRef.current.isPointerOverNode?.(e.clientX, e.clientY)) return
-
         movedRef.current = 0
         activePointerIdRef.current = e.pointerId
         angularVelRef.current = { ax: 0, ay: 0, az: 0, angle: 0 }

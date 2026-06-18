@@ -1,4 +1,5 @@
 import type { LayoutMode } from '../../../core/types'
+import type { LayoutOrganizationMethod } from '../state/settings-store'
 
 export const LAYOUT_MODE_HELP: Record<LayoutMode, { title: string; body: string }> = {
   hierarchy: {
@@ -14,6 +15,33 @@ export const LAYOUT_MODE_HELP: Record<LayoutMode, { title: string; body: string 
     body: 'Organic spread with depth-based bands — exploratory without rings or strict tiers.'
   }
 }
+
+export const ORGANIZATION_METHOD_OPTIONS: {
+  id: LayoutOrganizationMethod
+  label: string
+  blurb: string
+}[] = [
+  {
+    id: 'dependency-depth',
+    label: 'Dependency depth',
+    blurb: 'Direct imports closest; deeper dependency chains on outer rings or lower tiers.'
+  },
+  {
+    id: 'import-importance',
+    label: 'Import importance',
+    blurb: 'Frequently imported files nearer the center or top.'
+  },
+  {
+    id: 'file-role',
+    label: 'File role',
+    blurb: 'Entry, routes, components, services, and utilities ordered by architectural role.'
+  },
+  {
+    id: 'directory-proximity',
+    label: 'Directory proximity',
+    blurb: 'Files near the entry folder path rank higher; deeply nested files rank lower.'
+  }
+]
 
 export const LAYOUT_PRESETS: LayoutMode[] = ['hierarchy', 'pyramid', 'scattered']
 

@@ -23,12 +23,14 @@ export function NodeInspector() {
   const inspectorWidth = useSettingsStore((s) => s.inspectorPanelWidth)
   const snapshot = useGraphStore((s) => s.snapshot)
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId)
+  const selectedRingKey = useGraphStore((s) => s.selectedRingKey)
   const inspectorOpen = useGraphStore((s) => s.inspectorOpen)
   const setSelectedNodeId = useGraphStore((s) => s.setSelectedNodeId)
+  const setFocusedNodeId = useGraphStore((s) => s.setFocusedNodeId)
   const setInspectorOpen = useGraphStore((s) => s.setInspectorOpen)
   const openFileInCodeView = useGraphStore((s) => s.openFileInCodeView)
 
-  if (!snapshot || !selectedNodeId || !inspectorOpen) return null
+  if (!snapshot || !selectedNodeId || !inspectorOpen || selectedRingKey) return null
 
   const node = snapshot.nodes.find((n) => n.id === selectedNodeId)
   if (!node) return null
@@ -61,6 +63,7 @@ export function NodeInspector() {
             <button
               onClick={() => {
                 setSelectedNodeId(null)
+                setFocusedNodeId(null)
                 setInspectorOpen(false)
               }}
               className="p-1 rounded hover:bg-surface-muted text-text-muted"
@@ -158,6 +161,7 @@ export function NodeInspector() {
           <button
             onClick={() => {
               setSelectedNodeId(null)
+              setFocusedNodeId(null)
               setInspectorOpen(false)
             }}
             className="p-1 rounded hover:bg-surface-muted text-text-muted"

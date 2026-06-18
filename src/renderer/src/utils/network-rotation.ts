@@ -16,6 +16,8 @@ export interface Rotation3D {
 
 const FOCAL_LENGTH = 1100
 
+export { FOCAL_LENGTH }
+
 export const IDENTITY_ORIENTATION: Orientation3D = { w: 1, x: 0, y: 0, z: 0 }
 
 export function quatNormalize(q: Orientation3D): Orientation3D {
@@ -100,11 +102,10 @@ export function mapScreenDragToArcball(
 ): Orientation3D {
   const cx = rect.left + rect.width / 2
   const cy = rect.top + rect.height / 2
-  let sdx = dx * sensitivity * 2.4
+  let sdx = -dx * sensitivity * 2.4
   let sdy = dy * sensitivity * 2.4
   if (inverted) {
     sdx = -sdx
-    sdy = -sdy
   }
   const from = screenToArcball(cx, cy, rect)
   const to = screenToArcball(cx + sdx, cy + sdy, rect)

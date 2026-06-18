@@ -29,6 +29,8 @@ interface GraphStore {
   focusedNodeId: string | null
   selectedNodeId: string | null
   selectedEdgeId: string | null
+  /** Hierarchy ring guide key (depth-ringIndex-radius). */
+  selectedRingKey: string | null
   filter: FilterKind
   layoutMode: LayoutMode
   graphDepth: number
@@ -62,6 +64,11 @@ interface GraphStore {
   setFocusedNodeId: (id: string | null) => void
   setSelectedNodeId: (id: string | null) => void
   setSelectedEdgeId: (id: string | null) => void
+  setSelectedRingKey: (key: string | null) => void
+  applyLayoutPositions: (
+    positions: Record<string, { x: number; y: number }>,
+    options?: { resetCamera?: boolean }
+  ) => void
   setFilter: (filter: FilterKind) => void
   setLayoutMode: (mode: LayoutMode) => void
   setGraphDepth: (depth: number) => void
@@ -106,6 +113,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   focusedNodeId: null,
   selectedNodeId: null,
   selectedEdgeId: null,
+  selectedRingKey: null,
   filter: 'all',
   layoutMode: 'hierarchy',
   graphDepth: -1,
@@ -190,6 +198,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       selectedNodeId: nodeId,
       focusedNodeId: nodeId,
       selectedEdgeId: null,
+      selectedRingKey: null,
       inspectorOpen: true
     }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
@@ -197,11 +206,30 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
   setSelectedNodeId: (selectedNodeId) =>
     set({
       selectedNodeId,
+      focusedNodeId: selectedNodeId,
       selectedEdgeId: null,
+      selectedRingKey: selectedNodeId !== null ? null : get().selectedRingKey,
       inspectorOpen: selectedNodeId !== null
     }),
   setSelectedEdgeId: (selectedEdgeId) =>
-    set({ selectedEdgeId, selectedNodeId: null, inspectorOpen: true }),
+    set({ selectedEdgeId, selectedNodeId: null, selectedRingKey: null, inspectorOpen: true }),
+  setSelectedRingKey: (selectedRingKey) =>
+    set({
+      selectedRingKey,
+      selectedNodeId: selectedRingKey === null ? get().selectedNodeId : null,
+      focusedNodeId: selectedRingKey === null ? get().focusedNodeId : null,
+      selectedEdgeId: null,
+      inspectorOpen: selectedRingKey !== null
+    }),
+  applyLayoutPositions: (positions, options) => {
+    const current = get().snapshot
+    if (!current) return
+    set({
+      snapshot: { ...current, positions, scannedAt: Date.now() },
+      userPositions: positions,
+      ...(options?.resetCamera ? { initialCameraDone: false } : {})
+    })
+  },
   setFilter: (filter) => set({ filter }),
   setLayoutMode: (layoutMode) => set({ layoutMode: sanitizeLayoutMode(layoutMode) }),
   setGraphDepth: (graphDepth) => set({ graphDepth }),

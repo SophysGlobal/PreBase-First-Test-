@@ -17,11 +17,12 @@ export function layoutSpacingScale(spacing: LayoutSpacing): number {
 export function layoutRuntimeFromSettings(settings: AppSettings): LayoutRuntimeConfig {
   const spacingScale = layoutSpacingScale(settings.layoutSpacing)
   return {
-    layerRadiusScale: settings.layerRadiusScale * spacingScale,
+    layerRadiusScale: settings.layerRadiusScale,
     maxNodesPerLayer: settings.maxNodesPerLayer,
     layerGap: Math.round(settings.layerGap * spacingScale),
     centerClearance: Math.round(settings.centerClearance * spacingScale),
     scatterRelaxIterations: settings.scatterRelaxIterations,
-    spacingScale
+    spacingScale,
+    organizationMethod: settings.layoutOrganizationMethod
   }
 }

@@ -199,28 +199,48 @@ a,
   pointer-events: none;
 }
 
-/* While zooming/panning: lighter edge paint; keep overlays visible to avoid flicker. */
-.graph-viewport-shell.is-zooming .hierarchy-labels-layer {
-  opacity: 0.35;
+/* Startup only: defer heavy SVG/minimap until initial camera fit completes. */
+.graph-viewport-shell.is-initializing .react-flow__edges,
+.graph-viewport-shell.is-initializing .hierarchy-labels-layer,
+.graph-viewport-shell.is-initializing .react-flow__minimap {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* While zooming/panning: hide overlays; keep edges visible with lighter paint. */
+.graph-viewport-shell.is-zooming .hierarchy-labels-layer,
+.graph-viewport-shell.is-layout-transitioning .hierarchy-labels-layer {
+  visibility: hidden;
+  opacity: 0;
   pointer-events: none;
 }
 
-.graph-viewport-shell.is-zooming .react-flow__minimap {
-  opacity: 0.4;
+.graph-viewport-shell.is-zooming .react-flow__minimap,
+.graph-viewport-shell.is-layout-transitioning .react-flow__minimap {
+  display: none !important;
+  visibility: hidden !important;
   pointer-events: none;
 }
 
-.graph-viewport-shell.is-zooming .graph-legend-overlay {
+.graph-viewport-shell.is-zooming .graph-legend-overlay,
+.graph-viewport-shell.is-layout-transitioning .graph-legend-overlay {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Simplified edge paint during zoom — stay visible, drop expensive markers/glow. */
+.graph-viewport-shell.is-zooming .react-flow__edges {
   pointer-events: none;
 }
 
 .graph-viewport-shell.is-zooming .react-flow__edge-path {
-  opacity: 0.55;
   stroke-width: 1px !important;
+  opacity: 0.42 !important;
 }
 
-.graph-viewport-shell.is-zooming .react-flow__edges {
-  pointer-events: none;
+.graph-viewport-shell.is-zooming .react-flow__edge marker {
+  visibility: hidden;
 }
 
 .graph-viewport-shell.is-zooming .react-flow__node {
@@ -228,6 +248,14 @@ a,
 }
 
 .graph-viewport-shell.is-zooming .react-flow__node > div {
+  box-shadow: none !important;
+}
+
+.graph-viewport-shell.is-layout-transitioning .react-flow__node {
+  transition: none !important;
+}
+
+.graph-viewport-shell.is-layout-transitioning .react-flow__node > div {
   box-shadow: none !important;
 }
 

@@ -1,5 +1,5 @@
 {
-  "npm.autoDetect": "on",
+  "npm.autoDetect": "off",
   "npm.packageManager": "npm",
   "npm.scriptExplorerAction": "run",
   "files.watcherExclude": {

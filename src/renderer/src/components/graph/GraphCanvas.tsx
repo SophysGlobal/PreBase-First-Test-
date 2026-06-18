@@ -17,6 +17,7 @@ import { ArchitectureOverview } from './ArchitectureOverview'
 import { GraphMinimap } from './GraphMinimap'
 import { HierarchyLabels } from './HierarchyLabels'
 import { NodeInspector } from '../inspector/NodeInspector'
+import { RingInspector } from '../inspector/RingInspector'
 import { AiChatBubble } from '../ai/AiChatBubble'
 import { NodeContextMenu } from './NodeContextMenu'
 import { useGraphStore } from '../../state/graph-store'
@@ -25,6 +26,10 @@ import { viewportFitForLayout } from '@core/layout/layout-constraints'
 import { getNeighborhood, getRenderableNodeIds, styleForGraphEdge, toFlowEdges, toFlowNodes, FLOW_ENTRY_HEIGHT, FLOW_NODE_HEIGHT, FLOW_NODE_WIDTH } from '../../utils/flow-adapter'
 import { searchHighlightStrength } from '../../utils/graph-search'
 import { debugArchRender, debugGraphBounds, debugTilePressure } from '../../utils/graph-debug'
+import { useLayoutTransition } from '../../hooks/use-layout-transition'
+import { pickHierarchyRingAtPoint } from '../../utils/hierarchy-ring-hit'
+import { layoutRuntimeFromSettings } from '../../utils/layout-settings'
+import { useStoreApi } from '@xyflow/react'
 
 const nodeTypes = { architecture: ArchitectureNode }
 const edgeTypes = { architecture: ArchitectureEdge }
@@ -50,14 +55,16 @@ function InitialViewportController() {
         return
       }
 
+      const duration =
+        reduceMotion || nodes.length > 40 ? 0 : layoutAnimationDuration
       void fitView({
         nodes,
         padding: fit.padding,
         minZoom: fit.minZoom,
         maxZoom: Math.min(fit.maxZoom, Math.max(0.82, initialZoom)),
-        duration: reduceMotion ? 0 : layoutAnimationDuration
+        duration
       })
-      setInitialCameraDone(true)
+      window.setTimeout(() => setInitialCameraDone(true), duration + 160)
     }, 180)
 
     return () => clearTimeout(t)
@@ -99,12 +106,14 @@ function LayoutViewportController() {
     const t = setTimeout(() => {
       const nodes = getNodes()
       if (nodes.length === 0) return
+      const duration =
+        reduceMotion || nodes.length > 40 ? 0 : Math.min(layoutAnimationDuration, 500)
       void fitView({
         nodes,
         padding: fit.padding,
         minZoom: fit.minZoom,
         maxZoom: Math.min(fit.maxZoom, Math.max(0.82, initialZoom)),
-        duration: reduceMotion ? 0 : Math.min(layoutAnimationDuration, 500)
+        duration
       })
     }, 120)
     return () => clearTimeout(t)
@@ -152,6 +161,21 @@ function FocusCameraController() {
   return null
 }
 
+function LayoutTransitionController({
+  shellRef,
+  layoutTransitionRef
+}: {
+  shellRef: React.RefObject<HTMLDivElement | null>
+  layoutTransitionRef: React.MutableRefObject<boolean>
+}) {
+  const snapshot = useGraphStore((s) => s.snapshot)
+  const reduceMotion = useSettingsStore((s) => s.reduceMotion)
+  const layoutAnimationDuration = useSettingsStore((s) => s.layoutAnimationDuration)
+  const duration = reduceMotion ? 0 : Math.min(layoutAnimationDuration, 520)
+  useLayoutTransition(snapshot?.positions, duration > 0, duration, shellRef, layoutTransitionRef)
+  return null
+}
+
 export function GraphCanvas() {
   const snapshot = useGraphStore((s) => s.snapshot)
   const searchQuery = useGraphStore((s) => s.searchQuery)
@@ -170,6 +194,9 @@ export function GraphCanvas() {
   const updateUserPosition = useGraphStore((s) => s.updateUserPosition)
   const setSelectedNodeId = useGraphStore((s) => s.setSelectedNodeId)
   const setFocusedNodeId = useGraphStore((s) => s.setFocusedNodeId)
+  const setSelectedRingKey = useGraphStore((s) => s.setSelectedRingKey)
+  const selectedRingKey = useGraphStore((s) => s.selectedRingKey)
+  const store = useStoreApi()
   const setInspectorOpen = useGraphStore((s) => s.setInspectorOpen)
   const toggleFolderExpand = useGraphStore((s) => s.toggleFolderExpand)
 
@@ -190,12 +217,14 @@ export function GraphCanvas() {
   const [dragReadyNodeId, setDragReadyNodeId] = useState<string | null>(null)
   const [selectionRefresh, setSelectionRefresh] = useState(0)
   const layoutMode = useGraphStore((s) => s.layoutMode)
+  const initialCameraDone = useGraphStore((s) => s.initialCameraDone)
   const shellRef = useRef<HTMLDivElement>(null)
   const zoomEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const layoutRecalcRef = useRef(0)
   const flowCountsRef = useRef({ nodes: 0, edges: 0 })
   const isZoomingRef = useRef(false)
+  const layoutTransitionRef = useRef(false)
 
   useEffect(
     () => () => {
@@ -345,6 +374,14 @@ export function GraphCanvas() {
 
   flowCountsRef.current = { nodes: flowNodes.length, edges: flowEdges.length }
 
+  const graphMaxZoom = useMemo(() => {
+    const n = flowNodes.length
+    const e = flowEdges.length
+    if (n > 200 || e > 400) return 0.88
+    if (n > 100 || e > 200) return 0.95
+    return 1.15
+  }, [flowNodes.length, flowEdges.length])
+
   useEffect(() => {
     if (!snapshot?.positions) return
     debugGraphBounds(`arch-${layoutMode}`, Object.values(snapshot.positions))
@@ -396,11 +433,13 @@ export function GraphCanvas() {
       isZoomingRef.current = false
       shell.classList.remove('is-zooming')
       debugArchRender('zoom-end')
-    }, 220)
+    }, 280)
   }, [])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges)
+  // Defer edges only during initial camera fit — never strip them during zoom/pan.
+  const renderedEdges = initialCameraDone ? edges : []
 
   useEffect(() => {
     const apply = () => {
@@ -470,13 +509,37 @@ export function GraphCanvas() {
     [setSelectedNodeId, setFocusedNodeId, setInspectorOpen]
   )
 
-  const onPaneClick = useCallback(() => {
-    setContextMenu(null)
-    setDragReadyNodeId(null)
-    // Empty-space click → deselect (and close the inspector).
-    setSelectedNodeId(null)
-    setFocusedNodeId(null)
-  }, [setSelectedNodeId, setFocusedNodeId])
+  const onPaneClick = useCallback(
+    (event: MouseEvent | React.MouseEvent) => {
+      setContextMenu(null)
+      setDragReadyNodeId(null)
+
+      if (layoutMode === 'hierarchy' && snapshot?.entryNodeId) {
+        const runtime = layoutRuntimeFromSettings(useSettingsStore.getState())
+        const [tx, ty, zoom] = store.getState().transform
+        const flowX = (event.clientX - tx) / zoom
+        const flowY = (event.clientY - ty) / zoom
+        const ringKey = pickHierarchyRingAtPoint(snapshot, runtime, flowX, flowY, zoom)
+        if (ringKey) {
+          setSelectedRingKey(selectedRingKey === ringKey ? null : ringKey)
+          return
+        }
+      }
+
+      setSelectedRingKey(null)
+      setSelectedNodeId(null)
+      setFocusedNodeId(null)
+    },
+    [
+      snapshot,
+      layoutMode,
+      selectedRingKey,
+      setSelectedNodeId,
+      setFocusedNodeId,
+      setSelectedRingKey,
+      store
+    ]
+  )
 
   const clearHoverTimer = useCallback(() => {
     if (hoverTimerRef.current) {
@@ -509,7 +572,7 @@ export function GraphCanvas() {
   useEffect(() => () => clearHoverTimer(), [clearHoverTimer])
 
   useEffect(() => {
-    if (!snapshot || isZoomingRef.current) return
+    if (!snapshot || isZoomingRef.current || layoutTransitionRef.current) return
     const query = searchQuery.trim()
     const focusId = focusedNodeId ?? selectedNodeId
     const neighborhood =
@@ -583,7 +646,7 @@ export function GraphCanvas() {
   ])
 
   useEffect(() => {
-    if (!snapshot || isZoomingRef.current) return
+    if (!snapshot || isZoomingRef.current || layoutTransitionRef.current) return
     const focusId = focusedNodeId ?? selectedNodeId
     const edgeById = new Map(snapshot.edges.map((e) => [e.id, e]))
 
@@ -618,6 +681,23 @@ export function GraphCanvas() {
     )
   }, [snapshot, selectedNodeId, focusedNodeId, setEdges, selectionRefresh])
 
+  const defaultEdgeOptions = useMemo(
+    () => ({
+      type: 'architecture' as const,
+      style: { stroke: 'rgba(255,255,255,0.42)', strokeWidth: 1.25 },
+      markerEnd:
+        flowEdges.length > 120
+          ? undefined
+          : {
+              type: MarkerType.ArrowClosed,
+              width: 14,
+              height: 14,
+              color: 'rgba(255,255,255,0.45)'
+            }
+    }),
+    [flowEdges.length]
+  )
+
   if (!snapshot) return null
 
   if (architectureMode === 'overview') {
@@ -631,10 +711,13 @@ export function GraphCanvas() {
   }
 
   return (
-    <div ref={shellRef} className="relative flex-1 h-full graph-dot-surface graph-viewport-shell">
+    <div
+      ref={shellRef}
+      className={`relative flex-1 h-full graph-dot-surface graph-viewport-shell${!initialCameraDone ? ' is-initializing' : ''}`}
+    >
       <ReactFlow
         nodes={nodes}
-        edges={edges}
+        edges={renderedEdges}
         onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={onNodeClick}
@@ -656,7 +739,7 @@ export function GraphCanvas() {
         edgeTypes={edgeTypes}
         defaultViewport={{ x: 0, y: 0, zoom: 0.88 }}
         minZoom={0.2}
-        maxZoom={1.25}
+        maxZoom={graphMaxZoom}
         proOptions={{ hideAttribution: true }}
         onlyRenderVisibleElements
         elevateNodesOnSelect={false}
@@ -669,28 +752,21 @@ export function GraphCanvas() {
         nodeDragThreshold={3}
         edgesFocusable={false}
         autoPanOnNodeDrag={false}
-        defaultEdgeOptions={{
-          type: 'architecture',
-          style: { stroke: 'rgba(255,255,255,0.42)', strokeWidth: 1.25 },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            width: 14,
-            height: 14,
-            color: 'rgba(255,255,255,0.45)'
-          }
-        }}
+        defaultEdgeOptions={defaultEdgeOptions}
         className="bg-transparent"
       >
         <InitialViewportController />
         <LayoutViewportController />
+        <LayoutTransitionController shellRef={shellRef} layoutTransitionRef={layoutTransitionRef} />
         <FocusCameraController />
         <GraphMinimap />
       </ReactFlow>
 
       <ArchitectureGraphLegend nodes={snapshot.nodes} />
-      <HierarchyLabels />
+      <HierarchyLabels hidden={!initialCameraDone} />
 
       <NodeInspector />
+      <RingInspector />
       <AiChatBubble />
 
       <AnimatePresence>

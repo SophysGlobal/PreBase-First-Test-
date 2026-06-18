@@ -136,7 +136,8 @@ export class ProjectService {
 
   async relayout(
     mode: LayoutMode = 'hierarchy',
-    runtime?: Partial<LayoutRuntimeConfig>
+    runtime?: Partial<LayoutRuntimeConfig>,
+    options?: { broadcast?: boolean }
   ): Promise<GraphSnapshot | null> {
     if (!this.snapshot) return null
 
@@ -165,7 +166,9 @@ export class ProjectService {
     }
 
     this.snapshot = { ...this.snapshot, positions, scannedAt: Date.now() }
-    this.onUpdate?.(this.snapshot, true)
+    if (options?.broadcast !== false) {
+      this.onUpdate?.(this.snapshot, true)
+    }
     return this.snapshot
   }
 

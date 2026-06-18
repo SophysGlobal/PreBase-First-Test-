@@ -1,6 +1,4 @@
 import {
-  ChevronDown,
-  ChevronRight,
   FileCode,
   GitBranch,
   GitFork,
@@ -12,7 +10,6 @@ import {
   SlidersHorizontal,
   Workflow
 } from 'lucide-react'
-import { useState } from 'react'
 import type { LayoutMode } from '../../../../core/types'
 import {
   useGraphStore,
@@ -33,7 +30,8 @@ import {
   DEPTH_HELP,
   GRAPH_ORG_MODE_HELP,
   LAYOUT_MODE_HELP,
-  LAYOUT_PRESETS
+  LAYOUT_PRESETS,
+  ORGANIZATION_METHOD_OPTIONS
 } from '../../constants/graph-help'
 import { useSettingsStore } from '../../state/settings-store'
 
@@ -55,7 +53,7 @@ const graphModes: { id: GraphViewMode; label: string; icon: typeof Network }[] =
 ]
 
 interface GraphSidebarProps {
-  onRelayout: (mode: LayoutMode) => void
+  onRelayout: (mode: LayoutMode, resetCamera?: boolean) => void
 }
 
 function GraphControls({ onRelayout }: GraphSidebarProps) {
@@ -78,12 +76,15 @@ function GraphControls({ onRelayout }: GraphSidebarProps) {
   const snapshot = useGraphStore((s) => s.snapshot)
   const layoutSpacing = useSettingsStore((s) => s.layoutSpacing)
   const setLayoutSpacing = useSettingsStore((s) => s.setLayoutSpacing)
+  const layoutOrganizationMethod = useSettingsStore((s) => s.layoutOrganizationMethod)
+  const setLayoutOrganizationMethod = useSettingsStore((s) => s.setLayoutOrganizationMethod)
   const setDefaultLayout = useSettingsStore((s) => s.setDefaultLayout)
 
-  const [layoutOpen, setLayoutOpen] = useState(false)
   const isNetwork = graphViewMode === 'network'
   const isOverview = !isNetwork && architectureMode === 'overview'
   const showArchLayout = !isNetwork && !isOverview
+  const showLayoutOrganization =
+    showArchLayout && (layoutModeValue === 'hierarchy' || layoutModeValue === 'pyramid')
   // Depth/organization controls only for file & dependency slices.
   const showStructureControls =
     !isNetwork && !isOverview && (architectureMode === 'file' || architectureMode === 'dependency')
@@ -231,20 +232,10 @@ function GraphControls({ onRelayout }: GraphSidebarProps) {
 
         {showArchLayout && (
           <div className="border border-border-subtle rounded-lg overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setLayoutOpen((v) => !v)}
-              className="w-full flex items-center justify-between px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-text-muted hover:bg-surface-muted/40 transition-colors"
-            >
+            <p className="px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-text-muted">
               Layout
-              {layoutOpen ? (
-                <ChevronDown className="w-3 h-3" />
-              ) : (
-                <ChevronRight className="w-3 h-3" />
-              )}
-            </button>
-            {layoutOpen && (
-              <div className="px-2 pb-2 space-y-2">
+            </p>
+            <div className="px-2 pb-2 space-y-2">
                 <div className="space-y-0.5">
                   {LAYOUT_PRESETS.map((mode) => (
                     <div key={mode} className="flex items-center gap-0.5">
@@ -253,7 +244,7 @@ function GraphControls({ onRelayout }: GraphSidebarProps) {
                         onClick={() => {
                           setLayoutMode(mode)
                           setDefaultLayout(mode)
-                          onRelayout(mode)
+                          onRelayout(mode, true)
                         }}
                         className={`flex-1 px-2 py-1 rounded text-[10px] capitalize transition-colors text-left ${
                           layoutModeValue === mode
@@ -271,6 +262,34 @@ function GraphControls({ onRelayout }: GraphSidebarProps) {
                     </div>
                   ))}
                 </div>
+                {showLayoutOrganization && (
+                  <div className="space-y-1 pt-1 border-t border-border-subtle/60">
+                    <p className="text-[10px] uppercase tracking-wider text-text-muted px-0.5">
+                      Organization method
+                    </p>
+                    <div className="space-y-0.5">
+                      {ORGANIZATION_METHOD_OPTIONS.map((opt) => (
+                        <div key={opt.id} className="flex items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLayoutOrganizationMethod(opt.id)
+                              onRelayout(layoutModeValue, false)
+                            }}
+                            className={`flex-1 px-2 py-1 rounded text-[10px] transition-colors text-left ${
+                              layoutOrganizationMethod === opt.id
+                                ? 'bg-accent-soft text-accent'
+                                : 'text-text-muted hover:bg-surface-muted'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                          <InfoTooltip title={opt.label} body={opt.blurb} side="right" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-1 pt-1 border-t border-border-subtle/60">
                   <p className="text-[10px] uppercase tracking-wider text-text-muted px-0.5">
                     Node spacing
@@ -288,7 +307,7 @@ function GraphControls({ onRelayout }: GraphSidebarProps) {
                         type="button"
                         onClick={() => {
                           setLayoutSpacing(id)
-                          onRelayout(layoutModeValue)
+                          onRelayout(layoutModeValue, false)
                         }}
                         className={`flex-1 py-1 rounded-md text-[10px] font-medium transition-colors ${
                           layoutSpacing === id
@@ -302,7 +321,6 @@ function GraphControls({ onRelayout }: GraphSidebarProps) {
                   </div>
                 </div>
               </div>
-            )}
           </div>
         )}
 

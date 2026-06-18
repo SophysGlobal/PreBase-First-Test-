@@ -27,15 +27,17 @@ function LegendShell({
   title,
   collapsed,
   onToggle,
+  className,
   children
 }: {
   title: string
   collapsed: boolean
   onToggle: () => void
+  className?: string
   children: React.ReactNode
 }) {
   return (
-    <div className="pointer-events-auto max-w-[min(100%,920px)]">
+    <div className={`pointer-events-auto ${className ?? 'max-w-[min(100%,920px)]'}`}>
       <div className="flex items-center gap-2 px-2 py-1 rounded-lg border border-border-subtle bg-[#141518]/95 shadow-[0_4px_20px_rgba(0,0,0,0.35)]">
         <button
           type="button"
@@ -66,11 +68,12 @@ export function ArchitectureGraphLegend({ nodes }: { nodes: GraphNode[] }) {
   if (!showLegend) return null
 
   return (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[18] pointer-events-none px-3 w-full flex justify-center graph-legend-overlay">
+    <div className="absolute top-3 left-5 right-52 z-[18] pointer-events-none flex justify-start graph-legend-overlay">
       <LegendShell
         title="Architecture"
         collapsed={collapsed}
         onToggle={() => setCollapsed(!collapsed)}
+        className="max-w-full"
       >
         {fileTypes.slice(0, 12).map((t) => (
           <LegendChip key={t.id} color={t.color} label={t.name} />

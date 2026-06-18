@@ -8,6 +8,11 @@ export type UiDensity = 'comfortable' | 'compact'
 export type GraphQuality = 'balanced' | 'performance'
 export type EditorWhitespace = 'none' | 'boundary' | 'selection' | 'all'
 export type LayoutSpacing = 'compact' | 'balanced' | 'spacious'
+export type LayoutOrganizationMethod =
+  | 'dependency-depth'
+  | 'import-importance'
+  | 'file-role'
+  | 'directory-proximity'
 
 export interface AppSettings {
   theme: ThemePreference
@@ -34,6 +39,8 @@ export interface AppSettings {
   scatterRelaxIterations: number
   /** Architecture graph node spacing preset. */
   layoutSpacing: LayoutSpacing
+  /** How hierarchy/pyramid tiers are ranked. */
+  layoutOrganizationMethod: LayoutOrganizationMethod
   folderExpansionRadius: number
   edgeSimplificationThreshold: number
   /** Additional import edges per file beyond root connection (max 2). */
@@ -83,6 +90,7 @@ interface SettingsStore extends AppSettings {
   setLayerGap: (value: number) => void
   setCenterClearance: (value: number) => void
   setLayoutSpacing: (spacing: LayoutSpacing) => void
+  setLayoutOrganizationMethod: (method: LayoutOrganizationMethod) => void
   setScatterRelaxIterations: (value: number) => void
   setFolderExpansionRadius: (value: number) => void
   setEdgeSimplificationThreshold: (value: number) => void
@@ -129,6 +137,7 @@ const defaults: AppSettings = {
   centerClearance: 108,
   scatterRelaxIterations: 10,
   layoutSpacing: 'balanced',
+  layoutOrganizationMethod: 'dependency-depth',
   folderExpansionRadius: 82,
   edgeSimplificationThreshold: 0,
   visibleRelatedConnections: 2,
@@ -176,6 +185,7 @@ export const useSettingsStore = create<SettingsStore>()(
       setCenterClearance: (centerClearance) => set({ centerClearance }),
       setScatterRelaxIterations: (scatterRelaxIterations) => set({ scatterRelaxIterations }),
       setLayoutSpacing: (layoutSpacing) => set({ layoutSpacing }),
+      setLayoutOrganizationMethod: (layoutOrganizationMethod) => set({ layoutOrganizationMethod }),
       setFolderExpansionRadius: (folderExpansionRadius) => set({ folderExpansionRadius }),
       setEdgeSimplificationThreshold: (edgeSimplificationThreshold) =>
         set({ edgeSimplificationThreshold }),
@@ -203,7 +213,7 @@ export const useSettingsStore = create<SettingsStore>()(
       resetSettings: () => set({ ...defaults })
     }),
     {
-      name: 'prebase-settings-v7',
+      name: 'prebase-settings-v8',
       migrate: (persisted) => {
         const state = { ...defaults, ...(persisted as Partial<AppSettings>) }
         // P0 fix: edge simplification hid all import edges for many users
@@ -213,6 +223,15 @@ export const useSettingsStore = create<SettingsStore>()(
           state.defaultLayout = 'hierarchy'
         }
         if (state.showHierarchyLabels === undefined) state.showHierarchyLabels = true
+        const orgMethods: LayoutOrganizationMethod[] = [
+          'dependency-depth',
+          'import-importance',
+          'file-role',
+          'directory-proximity'
+        ]
+        if (!orgMethods.includes(state.layoutOrganizationMethod)) {
+          state.layoutOrganizationMethod = 'dependency-depth'
+        }
         if (state.nodeDragDelayMs === undefined) state.nodeDragDelayMs = 200
         if (state.editorMinimap === undefined) state.editorMinimap = true
         if (state.graphQuality === undefined) state.graphQuality = 'balanced'
