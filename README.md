@@ -1,6 +1,6 @@
 # PreBase
 
-AI-native, real-time codebase visualization for developers. Transform local projects into living architecture graphs.
+AI-native, real-time codebase visualization for anyone. Transform any code project into living architecture graphs.
 
 ## Features (MVP)
 
