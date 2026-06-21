@@ -16,7 +16,10 @@ function ArchitectureEdgeComponent(props: EdgeProps) {
     data
   } = props
 
-  const variant = (data as { variant?: EdgeVisualVariant })?.variant ?? 'import'
+  const variant = (data as { variant?: EdgeVisualVariant; curvature?: number })?.variant ?? 'import'
+  const curvature =
+    (data as { curvature?: number })?.curvature ??
+    (variant === 'dynamic' ? 0.35 : 0.28)
 
   const [edgePath] = getBezierPath({
     sourceX,
@@ -25,7 +28,7 @@ function ArchitectureEdgeComponent(props: EdgeProps) {
     targetX,
     targetY,
     targetPosition,
-    curvature: variant === 'dynamic' ? 0.35 : 0.25
+    curvature
   })
 
   const stroke = (style.stroke as string) ?? 'rgba(255,255,255,0.35)'

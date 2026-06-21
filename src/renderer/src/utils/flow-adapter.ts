@@ -7,6 +7,10 @@ import { inferFileDescription } from './file-description'
 import { searchHighlightStrength } from './graph-search'
 import { getVisibleNodeIds } from './graph-visibility'
 import { selectVisibleImportEdgeIds } from './edge-ranking'
+import {
+  styleForGraphEdgeWithFocus,
+  type EdgeRenderStyle
+} from './edge-render-strategy'
 import { getFileTypeColor } from './file-type-colors'
 import { getModeNodeIds, type ArchitectureMode } from './architecture-modes'
 import {
@@ -119,91 +123,26 @@ export function getNeighborhood(snapshot: GraphSnapshot, nodeId: string, hops: n
   return set
 }
 
-function classifyEdgeVariant(
-  edge: GraphEdge,
-  snapshot: GraphSnapshot,
-  focusId: string | null,
-  highlightIds: Set<string>,
-  selected: boolean
-): EdgeVisualVariant {
-  if (selected) return 'selected'
-  if (
-    focusId &&
-    (edge.source === focusId ||
-      edge.target === focusId ||
-      highlightIds.has(edge.source) ||
-      highlightIds.has(edge.target))
-  ) {
-    return 'highlighted'
-  }
-  if (edge.kind === 'contains') return 'contains'
-  if (edge.kind === 'dependency') return 'folder-link'
-  if (edge.meta?.isDynamic) return 'dynamic'
-
-  const source = snapshot.nodes.find((n) => n.id === edge.source)
-  const target = snapshot.nodes.find((n) => n.id === edge.target)
-
-  if (
-    source?.isEntry ||
-    source?.id === snapshot.entryNodeId ||
-    target?.isEntry ||
-    target?.id === snapshot.entryNodeId
-  ) {
-    return 'entry'
-  }
-
-  const targetLayer = target?.meta?.architectureLayer
-  if (targetLayer === 'services' || target?.kind === 'service') return 'service'
-  if (targetLayer === 'utils' || targetLayer === 'config') return 'utility'
-  if (target?.kind === 'component' || target?.meta?.isComponent) return 'component'
-  return 'import'
-}
-
 export const FLOW_NODE_WIDTH = 64
 export const FLOW_NODE_HEIGHT = 62
 export const FLOW_ENTRY_HEIGHT = 66
-
-const EDGE_STYLES: Record<
-  EdgeVisualVariant,
-  { stroke: string; strokeWidth: number; opacity: number; dashed?: boolean }
-> = {
-  import: { stroke: 'rgba(195,198,215,0.52)', strokeWidth: 1.35, opacity: 0.94 },
-  service: { stroke: 'rgba(52,211,153,0.55)', strokeWidth: 1.15, opacity: 0.9 },
-  utility: { stroke: 'rgba(113,113,122,0.55)', strokeWidth: 1, opacity: 0.82, dashed: true },
-  entry: { stroke: 'rgba(245,158,11,0.55)', strokeWidth: 1.2, opacity: 0.92 },
-  dynamic: { stroke: 'rgba(168,85,247,0.55)', strokeWidth: 1.1, opacity: 0.88, dashed: true },
-  component: { stroke: 'rgba(167,139,250,0.5)', strokeWidth: 1.05, opacity: 0.85 },
-  'folder-link': { stroke: 'rgba(113,113,122,0.45)', strokeWidth: 1, opacity: 0.75, dashed: true },
-  contains: { stroke: 'rgba(113,113,122,0.28)', strokeWidth: 0.85, opacity: 0.65, dashed: true },
-  highlighted: { stroke: 'rgba(45,212,191,0.65)', strokeWidth: 1.35, opacity: 1 },
-  selected: { stroke: 'rgba(245,158,11,0.95)', strokeWidth: 1.75, opacity: 1 }
-}
 
 export function styleForGraphEdge(
   edge: GraphEdge,
   snapshot: GraphSnapshot,
   focusId: string | null,
-  selectedEdgeId: string | null
-): {
-  variant: EdgeVisualVariant
-  stroke: string
-  strokeWidth: number
-  opacity: number
-  dashed?: boolean
-} {
-  const highlightIds = new Set<string>()
-  if (focusId) {
-    getConnectedIds(snapshot, focusId).forEach((id) => highlightIds.add(id))
-    highlightIds.add(focusId)
-  }
-  const variant = classifyEdgeVariant(
+  selectedEdgeId: string | null,
+  userPositions: Record<string, { x: number; y: number }> = {}
+): EdgeRenderStyle & { dashed?: boolean } {
+  return styleForGraphEdgeWithFocus(
     edge,
     snapshot,
     focusId,
-    highlightIds,
-    edge.id === selectedEdgeId
+    selectedEdgeId,
+    { ...snapshot.positions, ...userPositions },
+    FLOW_NODE_WIDTH,
+    FLOW_NODE_HEIGHT
   )
-  return { variant, ...EDGE_STYLES[variant] }
 }
 
 function buildRadialOverrides(
@@ -387,13 +326,6 @@ export function toFlowEdges(
   }
 ): Edge[] {
   const treeMode = isTreeGraphMode(options.graphOrganizationMode)
-  const focusId = options.focusedNodeId ?? options.selectedNodeId
-  const highlightIds = new Set<string>()
-  if (focusId) {
-    getConnectedIds(snapshot, focusId).forEach((id) => highlightIds.add(id))
-    highlightIds.add(focusId)
-  }
-
   const renderable = options.renderableNodeIds
   const maxRelated = options.visibleRelatedConnections ?? 2
   const visibleImportIds =
@@ -460,9 +392,16 @@ export function toFlowEdges(
           }
         }
       }
-      const selected = edge.id === options.selectedEdgeId
-      const variant = classifyEdgeVariant(edge, snapshot, focusId, highlightIds, selected)
-      const styles = EDGE_STYLES[variant]
+      const focusId = options.focusedNodeId ?? options.selectedNodeId
+      const styled = styleForGraphEdgeWithFocus(
+        edge,
+        snapshot,
+        focusId,
+        options.selectedEdgeId,
+        { ...snapshot.positions, ...options.userPositions },
+        FLOW_NODE_WIDTH,
+        FLOW_NODE_HEIGHT
+      )
       const importLabel =
         options.showEdgeLabels && edge.kind === 'import'
           ? (edge.meta?.importSource as string | undefined)
@@ -475,7 +414,7 @@ export function toFlowEdges(
         sourceHandle: handles.sourceHandle,
         targetHandle: handles.targetHandle,
         type: 'architecture',
-        zIndex: edge.kind === 'contains' ? 0 : 1,
+        zIndex: styled.zIndex,
         label: importLabel,
         labelStyle: importLabel
           ? { fill: 'rgba(161,161,170,0.85)', fontSize: 9 }
@@ -489,23 +428,24 @@ export function toFlowEdges(
         animated: false,
         selectable: false,
         style: {
-          stroke: styles.stroke,
-          strokeWidth: styles.strokeWidth,
-          opacity: styles.opacity,
-          strokeDasharray: styles.dashed ? '6 4' : undefined
+          stroke: styled.stroke,
+          strokeWidth: styled.strokeWidth,
+          opacity: styled.opacity,
+          strokeDasharray: styled.dashed ? '6 4' : undefined
         },
         markerEnd:
-          variant === 'contains'
+          !styled.showMarker
             ? undefined
             : {
                 type: MarkerType.ArrowClosed,
                 width: 14,
                 height: 14,
-                color: styles.stroke
+                color: styled.stroke
               },
         data: {
           kind: edge.kind,
-          variant,
+          variant: styled.variant,
+          curvature: styled.curvature,
           meta: edge.meta,
           sourceLabel: snapshot.nodes.find((n) => n.id === edge.source)?.label,
           targetLabel: snapshot.nodes.find((n) => n.id === edge.target)?.label
@@ -529,16 +469,6 @@ function pickHandles(
   return dy >= 0
     ? { sourceHandle: 's-bottom', targetHandle: 't-top' }
     : { sourceHandle: 's-top', targetHandle: 't-bottom' }
-}
-
-function getConnectedIds(snapshot: GraphSnapshot, nodeId: string): Set<string> {
-  const ids = new Set<string>()
-  for (const edge of snapshot.edges) {
-    if (edge.kind !== 'import' && edge.kind !== 'dependency') continue
-    if (edge.source === nodeId) ids.add(edge.target)
-    if (edge.target === nodeId) ids.add(edge.source)
-  }
-  return ids
 }
 
 export function findNodeByQuery(

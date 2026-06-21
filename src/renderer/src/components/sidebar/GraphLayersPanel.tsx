@@ -9,6 +9,10 @@ import {
   LAYERS_PANEL_HELP,
   VISIBLE_RELATED_CONNECTIONS_HELP
 } from '../../constants/graph-help'
+import {
+  edgeVisibilityModeFromMaxRelated,
+  type EdgeVisibilityMode
+} from '../../utils/edge-render-strategy'
 
 export function GraphLayersPanel() {
   const snapshot = useGraphStore((s) => s.snapshot)
@@ -23,6 +27,13 @@ export function GraphLayersPanel() {
   const setHideLowImportance = useGraphStore((s) => s.setHideLowImportance)
   const visibleRelatedConnections = useSettingsStore((s) => s.visibleRelatedConnections)
   const setVisibleRelatedConnections = useSettingsStore((s) => s.setVisibleRelatedConnections)
+  const edgeDensityMode = edgeVisibilityModeFromMaxRelated(visibleRelatedConnections)
+
+  const edgeDensityLabels: Record<EdgeVisibilityMode, string> = {
+    minimal: 'Minimal',
+    balanced: 'Balanced',
+    detailed: 'Detailed'
+  }
 
   if (!snapshot) return null
 
@@ -109,14 +120,16 @@ export function GraphLayersPanel() {
         <div className="space-y-1 titlebar-no-drag">
           <div className="flex items-center justify-between text-[11px] text-text-secondary">
             <span className="flex items-center gap-1">
-              Visible related connections
+              Edge density
               <InfoTooltip
                 title={VISIBLE_RELATED_CONNECTIONS_HELP.title}
                 body={VISIBLE_RELATED_CONNECTIONS_HELP.body}
                 side="bottom"
               />
             </span>
-            <span className="text-[10px] text-text-muted tabular-nums">{visibleRelatedConnections}</span>
+            <span className="text-[10px] text-text-muted tabular-nums">
+              {edgeDensityLabels[edgeDensityMode]}
+            </span>
           </div>
           <input
             type="range"
@@ -128,11 +141,15 @@ export function GraphLayersPanel() {
               setVisibleRelatedConnections(Number(e.target.value) as 0 | 1 | 2)
             }
             className="w-full accent-teal-400"
-            aria-label="Visible related connections"
+            aria-label="Edge density"
           />
           <p className="text-[9px] text-text-muted leading-snug">
-            Root link always shown · up to {visibleRelatedConnections} extra ranked link
-            {visibleRelatedConnections === 1 ? '' : 's'} per file
+            {edgeDensityMode === 'minimal' &&
+              'Root links only — calmest default view'}
+            {edgeDensityMode === 'balanced' &&
+              'Root link + 1 ranked link per file'}
+            {edgeDensityMode === 'detailed' &&
+              'Root link + 2 ranked links per file'}
           </p>
         </div>
         <label className="flex items-center justify-between text-[11px] text-text-secondary cursor-pointer titlebar-no-drag">

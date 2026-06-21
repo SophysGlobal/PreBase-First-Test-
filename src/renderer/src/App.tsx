@@ -15,6 +15,8 @@ import { SettingsView } from './components/settings/SettingsView'
 import { useGraphStore } from './state/graph-store'
 import { useSettingsStore } from './state/settings-store'
 import { findNodeByQuery } from './utils/flow-adapter'
+import { computeLanguageStats } from './utils/language-stats'
+import { useRecentProjectsStore } from './state/recent-projects-store'
 import type { LayoutMode } from '../../core/types'
 import { computeClientLayout } from './utils/arch-layout-client'
 import { layoutRuntimeFromSettings } from './utils/layout-settings'
@@ -42,34 +44,55 @@ export default function App() {
     setLayoutMode(settings.defaultLayout)
   }, [setLayoutMode])
 
+  const handleOpenProjectAtPath = useCallback(
+    async (projectPath: string) => {
+      try {
+        setLoading(true)
+        setError(null)
+        const result = await window.prebase.openProject(projectPath)
+
+        if (!result.success || !result.snapshot) {
+          setError(result.error ?? 'Failed to open project')
+          setLoading(false)
+          return
+        }
+
+        setSnapshot(result.snapshot)
+        const settings = useSettingsStore.getState()
+        setLayoutMode(settings.defaultLayout)
+        const relaid = await window.prebase.relayout(
+          settings.defaultLayout,
+          layoutRuntimeFromSettings(settings)
+        )
+        if (relaid) setSnapshot(relaid)
+
+        const stats = computeLanguageStats(result.snapshot.nodes)
+        const fileCount = result.snapshot.nodes.filter(
+          (n) => n.kind !== 'folder' && n.path
+        ).length
+        useRecentProjectsStore.getState().recordProjectOpen({
+          path: projectPath,
+          fileCount,
+          dominantLanguage: stats[0]?.name
+        })
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unknown error')
+        setLoading(false)
+      }
+    },
+    [setLoading, setError, setSnapshot, setLayoutMode]
+  )
+
   const handleOpenProject = useCallback(async () => {
     try {
       const path = await window.prebase.openProjectDialog()
       if (!path) return
-
-      setLoading(true)
-      setError(null)
-      const result = await window.prebase.openProject(path)
-
-      if (!result.success || !result.snapshot) {
-        setError(result.error ?? 'Failed to open project')
-        setLoading(false)
-        return
-      }
-
-      setSnapshot(result.snapshot)
-      const settings = useSettingsStore.getState()
-      setLayoutMode(settings.defaultLayout)
-      const relaid = await window.prebase.relayout(
-        settings.defaultLayout,
-        layoutRuntimeFromSettings(settings)
-      )
-      if (relaid) setSnapshot(relaid)
+      await handleOpenProjectAtPath(path)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
       setLoading(false)
     }
-  }, [setLoading, setError, setSnapshot])
+  }, [handleOpenProjectAtPath, setError, setLoading])
 
   const handleRelayout = useCallback(
     async (mode?: LayoutMode, resetCamera = false) => {
@@ -139,7 +162,12 @@ export default function App() {
       <main className="flex flex-col flex-1 min-w-0 relative">
         <AnimatePresence mode="wait">
           {!snapshot ? (
-            <WelcomeScreen key="welcome" onOpenProject={handleOpenProject} isLoading={isLoading} />
+            <WelcomeScreen
+              key="welcome"
+              onOpenProject={handleOpenProject}
+              onOpenProjectPath={handleOpenProjectAtPath}
+              isLoading={isLoading}
+            />
           ) : viewMode === 'settings' ? (
             <motion.div
               key="settings"

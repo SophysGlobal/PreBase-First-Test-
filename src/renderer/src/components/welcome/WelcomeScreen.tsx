@@ -1,8 +1,10 @@
 import { motion } from 'framer-motion'
 import { FolderOpen, GitBranch, Sparkles, Zap } from 'lucide-react'
+import { RecentProjectsBlock } from './RecentProjectsBlock'
 
 interface WelcomeScreenProps {
   onOpenProject: () => void
+  onOpenProjectPath: (path: string) => void
   isLoading: boolean
 }
 
@@ -24,9 +26,9 @@ const features = [
   }
 ]
 
-export function WelcomeScreen({ onOpenProject, isLoading }: WelcomeScreenProps) {
+export function WelcomeScreen({ onOpenProject, onOpenProjectPath, isLoading }: WelcomeScreenProps) {
   return (
-    <div className="flex flex-1 items-center justify-center relative overflow-hidden">
+    <div className="flex flex-1 items-center justify-center relative overflow-hidden overflow-y-auto py-10">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_rgba(99,102,241,0.08)_0%,_transparent_70%)]" />
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-accent/5 rounded-full blur-3xl" />
       <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-purple-500/5 rounded-full blur-3xl" />
@@ -35,7 +37,7 @@ export function WelcomeScreen({ onOpenProject, isLoading }: WelcomeScreenProps) 
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-        className="relative z-10 flex flex-col items-center max-w-lg px-8 text-center"
+        className="relative z-10 flex flex-col items-center max-w-2xl px-8 text-center"
       >
         <div className="flex items-center justify-center w-16 h-16 mb-6 rounded-2xl bg-gradient-to-br from-accent/20 to-purple-500/10 border border-border-subtle">
           <Sparkles className="w-8 h-8 text-accent" />
@@ -44,7 +46,7 @@ export function WelcomeScreen({ onOpenProject, isLoading }: WelcomeScreenProps) 
         <h1 className="text-3xl font-semibold tracking-tight text-text-primary mb-2">
           PreBase
         </h1>
-        <p className="text-text-secondary text-sm leading-relaxed mb-8">
+        <p className="text-text-secondary text-sm leading-relaxed mb-8 max-w-lg">
           Transform your codebase into a living visual system. Open a local project to explore
           architecture, dependencies, and structure in real time.
         </p>
@@ -58,7 +60,9 @@ export function WelcomeScreen({ onOpenProject, isLoading }: WelcomeScreenProps) 
           {isLoading ? 'Scanning project...' : 'Open Project'}
         </button>
 
-        <div className="grid grid-cols-3 gap-4 mt-16 w-full max-w-xl">
+        <RecentProjectsBlock onOpenProjectPath={onOpenProjectPath} isLoading={isLoading} />
+
+        <div className="grid grid-cols-3 gap-4 mt-12 w-full max-w-xl">
           {features.map((f, i) => (
             <motion.div
               key={f.title}

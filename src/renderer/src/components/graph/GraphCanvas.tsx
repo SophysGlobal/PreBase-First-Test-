@@ -654,7 +654,7 @@ export function GraphCanvas() {
       current.map((edge) => {
         const graphEdge = edgeById.get(edge.id)
         if (!graphEdge) return edge
-        const styled = styleForGraphEdge(graphEdge, snapshot, focusId, null)
+        const styled = styleForGraphEdge(graphEdge, snapshot, focusId, null, userPositions)
         const data = edge.data as { variant?: string }
         const prev = edge.style ?? {}
         if (
@@ -667,7 +667,7 @@ export function GraphCanvas() {
         }
         return {
           ...edge,
-          zIndex: styled.variant === 'highlighted' || styled.variant === 'selected' ? 3 : edge.zIndex,
+          zIndex: styled.zIndex ?? edge.zIndex,
           style: {
             ...prev,
             stroke: styled.stroke,
@@ -675,11 +675,20 @@ export function GraphCanvas() {
             opacity: styled.opacity,
             strokeDasharray: styled.dashed ? '6 4' : undefined
           },
-          data: { ...edge.data, variant: styled.variant }
+          markerEnd:
+            styled.showMarker === false
+              ? undefined
+              : {
+                  type: MarkerType.ArrowClosed,
+                  width: 14,
+                  height: 14,
+                  color: styled.stroke
+                },
+          data: { ...edge.data, variant: styled.variant, curvature: styled.curvature }
         }
       })
     )
-  }, [snapshot, selectedNodeId, focusedNodeId, setEdges, selectionRefresh])
+  }, [snapshot, selectedNodeId, focusedNodeId, userPositions, setEdges, selectionRefresh])
 
   const defaultEdgeOptions = useMemo(
     () => ({

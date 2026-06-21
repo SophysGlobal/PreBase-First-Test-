@@ -140,7 +140,7 @@ const defaults: AppSettings = {
   layoutOrganizationMethod: 'dependency-depth',
   folderExpansionRadius: 82,
   edgeSimplificationThreshold: 0,
-  visibleRelatedConnections: 2,
+  visibleRelatedConnections: 1,
   editorBracketPairColorization: true,
   editorRenderWhitespace: 'none',
   editorScrollBeyondLastLine: false,
@@ -246,10 +246,10 @@ export const useSettingsStore = create<SettingsStore>()(
           state.edgeSimplificationThreshold = 0
         }
         if (state.visibleRelatedConnections === undefined) {
-          state.visibleRelatedConnections = 2
+          state.visibleRelatedConnections = 1
         } else {
           const v = state.visibleRelatedConnections
-          if (v < 0 || v > 2) state.visibleRelatedConnections = 2
+          if (v < 0 || v > 2) state.visibleRelatedConnections = 1
         }
         if (state.editorBracketPairColorization === undefined) {
           state.editorBracketPairColorization = true
