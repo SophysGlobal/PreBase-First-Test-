@@ -11,20 +11,23 @@ import {
   mergeLayoutRuntime,
   type LayoutRuntimeConfig
 } from './layout-config'
+import { depthLevelColor } from './layout-depth-colors'
 import {
   cellHeight,
   cellWidth,
   centerGraph,
-  centerGraphHorizontally,
+  centerLayoutHorizontally,
   convertCentersToTopLeft,
   boxesOverlap,
-  compressHorizontalExtent,
-  finalizePyramidLayout,
+  finalizePyramidLayoutTopLeft,
   finalizeScatterLayout,
   capLayoutBoundingBox,
   layoutMaxBounds,
-  pyramidMaxHeight,
   scatterMaxRadius,
+  resolveRectCollisions,
+  ensureZeroOverlaps,
+  countLayoutOverlaps,
+  measureAxisAlignedBounds,
   LAYOUT_NODE_BOX
 } from './layout-constraints'
 
@@ -77,6 +80,19 @@ function minAngleForRadius(radius: number): number {
   const chord = Math.hypot(LAYOUT_NODE_BOX.width, LAYOUT_NODE_BOX.height) + LAYOUT_NODE_BOX.gap
   if (radius < 4) return Math.PI * 2
   return 2 * Math.asin(Math.min(1, chord / (2 * radius)))
+}
+
+/** Max nodes that fit on a ring without box overlap. */
+function maxNodesOnRing(radius: number): number {
+  if (radius < 8) return 1
+  const minAngle = minAngleForRadius(radius)
+  return Math.max(1, Math.floor((Math.PI * 2 * 0.92) / (minAngle * 1.08)))
+}
+
+function effectiveMaxPerRing(radius: number, runtime: LayoutRuntimeConfig): number {
+  const capacity = maxNodesOnRing(radius)
+  const configMax = Math.max(4, runtime.maxNodesPerLayer)
+  return Math.min(configMax, capacity)
 }
 
 function applyRingSlots(
@@ -142,10 +158,28 @@ function finishHierarchyLayout(
   applyRingSlots(ringSlots, positions)
   const { width, height } = LAYOUT_NODE_BOX
   convertCentersToTopLeft(positions, width, height)
+
+  for (let attempt = 0; attempt < 32; attempt++) {
+    resolveRectCollisions(positions, width, height, 12)
+    if (countLayoutOverlaps(positions, width, height) === 0) break
+  }
+  ensureZeroOverlaps(positions, width, height, 64)
+
   const nodeCount = Object.keys(positions).length
   if (nodeCount > 0) {
     const bounds = layoutMaxBounds(nodeCount)
-    capLayoutBoundingBox(positions, bounds.width, bounds.height, width, height)
+    const measured = measureAxisAlignedBounds(positions, width, height)
+    if (measured.width > bounds.width || measured.height > bounds.height) {
+      const saved = Object.fromEntries(
+        Object.keys(positions).map((id) => [id, { ...positions[id] }])
+      )
+      capLayoutBoundingBox(positions, bounds.width, bounds.height, width, height)
+      if (countLayoutOverlaps(positions, width, height) > 0) {
+        for (const id of Object.keys(saved)) positions[id] = saved[id]
+      } else {
+        ensureZeroOverlaps(positions, width, height, 48)
+      }
+    }
   }
 }
 
@@ -266,25 +300,41 @@ function layerRingRadii(
   depth: number,
   ids: string[],
   runtime: LayoutRuntimeConfig,
-  maxRadius: number
+  maxRadius: number,
+  prevOuterRadius = 0
 ): number[] {
   if (ids.length === 0) return []
 
-  const maxPer = Math.max(4, runtime.maxNodesPerLayer)
+  const minSep = Math.max(runtime.layerGap * 0.24, cellHeight() * 0.62)
+  const floorRadius =
+    depth > 0 ? Math.max(ringRadiusForDepth(depth, runtime), prevOuterRadius + minSep * 0.38) : 0
+  const maxPer = effectiveMaxPerRing(
+    Math.max(floorRadius, ringRadiusForDepth(depth, runtime)),
+    runtime
+  )
+
   if (ids.length <= maxPer) {
-    const prevDepthRadius = depth > 1 ? ringRadiusForDepth(depth - 1, runtime) : 0
-    return [ringRadiusForLayer(ids.length, depth, runtime, maxRadius, prevDepthRadius)]
+    const prevDepthRadius = Math.max(prevOuterRadius + minSep, ringRadiusForDepth(depth - 1, runtime))
+    return [
+      Math.max(
+        ringRadiusForLayer(ids.length, depth, runtime, maxRadius, prevDepthRadius),
+        floorRadius
+      )
+    ]
   }
 
   const ringCount = Math.ceil(ids.length / maxPer)
-  const ringStep = Math.max(scaledMinDist(runtime) * 0.62, cellHeight() * 0.72 * (runtime.spacingScale ?? 1))
-  let prevRadius = depth > 0 ? ringRadiusForDepth(depth - 1, runtime) : 0
+  const ringStep = Math.max(cellHeight() * 0.42, scaledMinDist(runtime) * 0.34)
+  let prevRadius = Math.max(prevOuterRadius + minSep * 0.45, depth > 0 ? ringRadiusForDepth(depth - 1, runtime) : 0)
   const radii: number[] = []
   for (let ringIndex = 0; ringIndex < ringCount; ringIndex++) {
     const slice = ids.slice(ringIndex * maxPer, (ringIndex + 1) * maxPer)
     const base = ringRadiusForDepth(depth, runtime)
     const minR = minRadiusForCount(slice.length, NODE_W, scaledGap(runtime))
-    const radius = Math.min(maxRadius, Math.max(base, minR, prevRadius + ringStep))
+    const radius = Math.min(
+      maxRadius,
+      Math.max(base, minR, prevRadius + ringStep, floorRadius)
+    )
     prevRadius = radius
     radii.push(radius)
   }
@@ -307,7 +357,10 @@ function placeLayerRings(
   const floorRadius =
     depth > 0 ? Math.max(ringRadiusForDepth(depth, runtime), prevOuterRadius + minSep * 0.38) : 0
 
-  const maxPer = Math.max(4, runtime.maxNodesPerLayer)
+  const maxPer = effectiveMaxPerRing(
+    Math.max(floorRadius, ringRadiusForDepth(depth, runtime)),
+    runtime
+  )
   if (ids.length <= maxPer) {
     const prevDepthRadius = Math.max(prevOuterRadius + minSep, ringRadiusForDepth(depth - 1, runtime))
     const radius = Math.max(
@@ -320,7 +373,7 @@ function placeLayerRings(
   }
 
   const ringCount = Math.ceil(ids.length / maxPer)
-  const ringStep = Math.max(scaledMinDist(runtime) * 0.62, cellHeight() * 0.72 * (runtime.spacingScale ?? 1))
+  const ringStep = Math.max(cellHeight() * 0.42, scaledMinDist(runtime) * 0.34)
   let prevRadius = Math.max(prevOuterRadius + minSep * 0.45, depth > 0 ? ringRadiusForDepth(depth - 1, runtime) : 0)
   for (let ringIndex = 0; ringIndex < ringCount; ringIndex++) {
     const slice = ids.slice(ringIndex * maxPer, (ringIndex + 1) * maxPer)
@@ -387,61 +440,92 @@ export function getHierarchyRingGuides(
   const layoutNodeCount = nodes.filter((n) => n.kind !== 'folder').length
   const maxRadius = hierarchyMaxRadius(layoutNodeCount, runtime.spacingScale ?? 1)
   const guides: HierarchyRingGuide[] = []
+  let prevGuideRadius = 0
 
   for (const depth of [...layers.keys()].sort((a, b) => a - b)) {
     if (depth === 0) continue
     const ids = layers.get(depth) ?? []
     if (ids.length === 0) continue
-    const radii = layerRingRadii(depth, ids, runtime, maxRadius)
+    const radii = layerRingRadii(depth, ids, runtime, maxRadius, prevGuideRadius)
     radii.forEach((radius, ringIndex) => {
       guides.push({ depth, ringIndex, radius })
     })
+    if (radii.length > 0) prevGuideRadius = radii[radii.length - 1]
   }
   return guides
 }
 
-/** Ring layers with member node ids (from computed positions). */
+/** Ring layers with member node ids (from layout algorithm, not position bucketing). */
 export function getHierarchyRingLayers(
   nodes: GraphNode[],
   edges: GraphEdge[],
   entryNodeId: string,
-  positions: Record<string, LayoutPosition>,
+  _positions?: Record<string, LayoutPosition>,
   runtimePartial?: Partial<LayoutRuntimeConfig>,
   organizationMethod?: LayoutOrganizationMethod
 ): HierarchyRingLayer[] {
   const runtime = mergeLayoutRuntime(runtimePartial)
   const method = organizationMethod ?? runtime.organizationMethod
   const { layers } = organizationLayers(nodes, edges, entryNodeId, method)
-  const entry = positions[entryNodeId]
-  if (!entry) return []
-
-  const cx = entry.x + NODE_W / 2
-  const cy = entry.y + LAYOUT_NODE_BOX.height / 2
+  const layoutNodeCount = nodes.filter((n) => n.kind !== 'folder').length
+  const maxRadius = hierarchyMaxRadius(layoutNodeCount, runtime.spacingScale ?? 1)
   const out: HierarchyRingLayer[] = []
+  let prevOuterRadius = 0
 
   for (const depth of [...layers.keys()].sort((a, b) => a - b)) {
     if (depth === 0) continue
-    const ids = layers.get(depth) ?? []
-    const buckets = new Map<number, string[]>()
-    for (const id of ids) {
-      const p = positions[id]
-      if (!p) continue
-      const r = Math.hypot(p.x + NODE_W / 2 - cx, p.y + LAYOUT_NODE_BOX.height / 2 - cy)
-      const bucket = Math.round(r / 10) * 10
-      if (!buckets.has(bucket)) buckets.set(bucket, [])
-      buckets.get(bucket)!.push(id)
+    const ids = [...(layers.get(depth) ?? [])].sort((a, b) => a.localeCompare(b))
+    if (ids.length === 0) continue
+
+    const minSep = Math.max(runtime.layerGap * 0.24, cellHeight() * 0.62)
+    const floorRadius =
+      depth > 0 ? Math.max(ringRadiusForDepth(depth, runtime), prevOuterRadius + minSep * 0.38) : 0
+    const maxPer = effectiveMaxPerRing(
+      Math.max(floorRadius, ringRadiusForDepth(depth, runtime)),
+      runtime
+    )
+
+    if (ids.length <= maxPer) {
+      const prevDepthRadius = Math.max(prevOuterRadius + minSep, ringRadiusForDepth(depth - 1, runtime))
+      const radius = Math.max(
+        ringRadiusForLayer(ids.length, depth, runtime, maxRadius, prevDepthRadius),
+        floorRadius
+      )
+      out.push({
+        key: `${depth}-0-${radius}`,
+        depth,
+        ringIndex: 0,
+        radius,
+        nodeIds: ids
+      })
+      prevOuterRadius = Math.max(prevOuterRadius, radius)
+      continue
     }
-    let ringIndex = 0
-    for (const radius of [...buckets.keys()].sort((a, b) => a - b)) {
+
+    const ringCount = Math.ceil(ids.length / maxPer)
+    const ringStep = Math.max(cellHeight() * 0.42, scaledMinDist(runtime) * 0.34)
+    let prevRadius = Math.max(
+      prevOuterRadius + minSep * 0.45,
+      depth > 0 ? ringRadiusForDepth(depth - 1, runtime) : 0
+    )
+    for (let ringIndex = 0; ringIndex < ringCount; ringIndex++) {
+      const slice = ids.slice(ringIndex * maxPer, (ringIndex + 1) * maxPer)
+      const base = ringRadiusForDepth(depth, runtime)
+      const minR = minRadiusForCount(slice.length, NODE_W, scaledGap(runtime))
+      const radius = Math.min(
+        maxRadius,
+        Math.max(base, minR, prevRadius + ringStep, floorRadius)
+      )
+      prevRadius = radius
       out.push({
         key: `${depth}-${ringIndex}-${radius}`,
         depth,
         ringIndex,
         radius,
-        nodeIds: buckets.get(radius)!
+        nodeIds: slice
       })
-      ringIndex++
     }
+    prevOuterRadius = Math.max(prevOuterRadius, prevRadius)
   }
   return out
 }
@@ -511,58 +595,61 @@ export function computePyramidLayout(
   const positions: Record<string, LayoutPosition> = {}
   const layoutNodeCount = nodes.filter((n) => n.kind !== 'folder').length
   const maxDepth = Math.max(1, ...[...layers.keys()])
+  const { width: boxW, height: boxH, gap } = LAYOUT_NODE_BOX
+  const bounds = layoutMaxBounds(layoutNodeCount, scale)
   const cw = cellWidth() * scale
   const ch = cellHeight() * scale
   const tierGap = ch * PYRAMID_DEFAULTS.tierGapMul
   const rowGap = ch * PYRAMID_DEFAULTS.rowGapMul
-  const maxRowWidth = Math.min(
-    380 * scale,
-    Math.max(180 * scale, Math.ceil(Math.sqrt(Math.max(1, layoutNodeCount))) * cw * 1.35)
-  )
-  const maxPerRow = Math.max(
-    2,
-    Math.min(8, runtime.maxNodesPerLayer, Math.floor(maxRowWidth / Math.max(cw, 1)))
-  )
-
-  function tierRowSpan(depth: number, countInRow: number): number {
-    const t = Math.pow(depth / maxDepth, 0.78)
-    const tierCap = maxRowWidth * (0.38 + 0.62 * t)
-    return Math.min(Math.max(0, countInRow - 1) * cw, tierCap)
-  }
-
-  function tierCapacity(depth: number, countAtDepth: number): number {
-    if (depth <= 0) return 1
-    const t = Math.pow(depth / maxDepth, 0.62)
-    const byDepth = Math.max(1, Math.ceil(maxPerRow * t))
-    return Math.min(maxPerRow, byDepth, Math.max(1, Math.ceil(Math.sqrt(countAtDepth))))
-  }
-
   const topPad = 40 * scale
-  positions[entryNodeId] = { x: 0, y: topPad + LAYOUT_NODE_BOX.height / 2 }
-  const firstTierCenter = topPad + LAYOUT_NODE_BOX.height + LAYOUT_NODE_BOX.gap + LAYOUT_NODE_BOX.height / 2
+  const maxRowWidth = Math.min(
+    bounds.width * 0.92,
+    Math.max(200 * scale, Math.ceil(Math.sqrt(Math.max(1, layoutNodeCount))) * cw * 1.2)
+  )
+  const maxCols = Math.max(
+    2,
+    Math.min(12, runtime.maxNodesPerLayer, Math.floor(maxRowWidth / Math.max(cw, 1)))
+  )
 
-  for (const [depth, ids] of [...layers.entries()].sort((a, b) => a[0] - b[0])) {
-    if (depth === 0) continue
+  const sortedLayers = [...layers.entries()]
+    .filter(([d]) => d !== 0)
+    .sort((a, b) => a[0] - b[0])
 
+  function tierCapacity(depth: number): number {
+    if (depth <= 0) return 1
+    const byWidth = Math.max(1, Math.floor(maxRowWidth / cw))
+    const byBound = Math.max(2, Math.floor((bounds.width - boxW) / Math.max(cw, 1)) + 1)
+    const t = Math.pow(depth / maxDepth, 0.72)
+    const byDepth = Math.max(2, Math.ceil(maxCols * t))
+    return Math.min(byWidth, byDepth, maxCols, byBound)
+  }
+
+  positions[entryNodeId] = { x: -boxW / 2, y: topPad }
+  let blockY = topPad + boxH + gap
+
+  for (const [depth, ids] of sortedLayers) {
     const sorted = [...ids].sort((a, b) => a.localeCompare(b))
-    const tierMax = tierCapacity(depth, sorted.length)
+    const tierMax = tierCapacity(depth)
     const rowCount = Math.ceil(sorted.length / tierMax)
 
     for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
       const rowIds = sorted.slice(rowIndex * tierMax, (rowIndex + 1) * tierMax)
-      const y = firstTierCenter + (depth - 1) * tierGap + rowIndex * rowGap
-      const span = tierRowSpan(depth, rowIds.length)
+      const rowWidth = Math.max(boxW, (rowIds.length - 1) * cw + boxW)
+      const startX = -rowWidth / 2
+      const y = blockY + rowIndex * rowGap
+
       rowIds.forEach((id, i) => {
-        positions[id] = { x: -span / 2 + (rowIds.length <= 1 ? 0 : (i / (rowIds.length - 1)) * span), y }
+        positions[id] = { x: startX + i * cw, y }
       })
     }
+
+    blockY += Math.max(1, rowCount) * rowGap + tierGap
   }
 
-  centerGraphHorizontally(positions)
-  compressHorizontalExtent(positions, maxRowWidth, LAYOUT_NODE_BOX.width)
-  finalizePyramidLayout(positions, {
-    minDist: scaledMinDist(runtime),
-    maxSpread: pyramidMaxHeight(layoutNodeCount, scale)
+  centerLayoutHorizontally(positions, boxW, boxH)
+  finalizePyramidLayoutTopLeft(positions, {
+    nodeCount: layoutNodeCount,
+    spacingScale: scale
   })
   return positions
 }
@@ -606,4 +693,102 @@ export function getNodesWithinDepth(
   return visible
 }
 
+export interface PyramidDepthGuide {
+  depth: number
+  rowIndex: number
+  y: number
+}
+
+export interface PyramidDepthBand {
+  depth: number
+  y: number
+  height: number
+}
+
+/** One horizontal band per depth level from actual node positions (top-left coordinates). */
+export function getPyramidDepthBands(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  entryNodeId: string,
+  positions: Record<string, LayoutPosition>,
+  runtimePartial?: Partial<LayoutRuntimeConfig>,
+  organizationMethod?: LayoutOrganizationMethod
+): PyramidDepthBand[] {
+  const runtime = mergeLayoutRuntime(runtimePartial)
+  const method = organizationMethod ?? runtime.organizationMethod
+  const { layers } = organizationLayers(nodes, edges, entryNodeId, method)
+  const boxH = LAYOUT_NODE_BOX.height
+  const bands: PyramidDepthBand[] = []
+
+  for (const depth of [...layers.keys()].sort((a, b) => a - b)) {
+    if (depth === 0) continue
+    const ids = layers.get(depth) ?? []
+    let minY = Infinity
+    let maxY = -Infinity
+    for (const id of ids) {
+      const p = positions[id]
+      if (!p) continue
+      minY = Math.min(minY, p.y)
+      maxY = Math.max(maxY, p.y + boxH)
+    }
+    if (!Number.isFinite(minY)) continue
+    bands.push({ depth, y: minY, height: Math.max(boxH, maxY - minY) })
+  }
+  return bands
+}
+
+/** @deprecated Prefer getPyramidDepthBands — kept for layout preview helpers. */
+export function getPyramidDepthGuides(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  entryNodeId: string,
+  _positions: Record<string, LayoutPosition>,
+  runtimePartial?: Partial<LayoutRuntimeConfig>,
+  organizationMethod?: LayoutOrganizationMethod
+): PyramidDepthGuide[] {
+  const runtime = mergeLayoutRuntime(runtimePartial)
+  const method = organizationMethod ?? runtime.organizationMethod
+  const { layers } = organizationLayers(nodes, edges, entryNodeId, method)
+  const scale = runtime.spacingScale ?? 1
+  const ch = cellHeight() * scale
+  const tierGap = ch * PYRAMID_DEFAULTS.tierGapMul
+  const rowGap = ch * PYRAMID_DEFAULTS.rowGapMul
+  const topPad = 40 * scale
+  const firstTierCenter = topPad + LAYOUT_NODE_BOX.height + LAYOUT_NODE_BOX.gap + LAYOUT_NODE_BOX.height / 2
+  const layoutNodeCount = nodes.filter((n) => n.kind !== 'folder').length
+  const maxDepth = Math.max(1, ...[...layers.keys()])
+  const cw = cellWidth() * scale
+  const maxRowWidth = Math.min(
+    380 * scale,
+    Math.max(180 * scale, Math.ceil(Math.sqrt(Math.max(1, layoutNodeCount))) * cw * 1.35)
+  )
+  const maxPerRow = Math.max(
+    2,
+    Math.min(8, runtime.maxNodesPerLayer, Math.floor(maxRowWidth / Math.max(cw, 1)))
+  )
+
+  function tierCapacity(depth: number, countAtDepth: number): number {
+    if (depth <= 0) return 1
+    const byWidth = Math.max(1, Math.floor(maxRowWidth / cw))
+    const t = Math.pow(depth / maxDepth, 0.62)
+    const byDepth = Math.max(1, Math.ceil(maxPerRow * t))
+    return Math.min(byWidth, byDepth, maxPerRow, Math.max(1, Math.ceil(Math.sqrt(countAtDepth))))
+  }
+
+  const guides: PyramidDepthGuide[] = []
+  for (const depth of [...layers.keys()].sort((a, b) => a - b)) {
+    if (depth === 0) continue
+    const ids = layers.get(depth) ?? []
+    if (ids.length === 0) continue
+    const tierMax = tierCapacity(depth, ids.length)
+    const rowCount = Math.ceil(ids.length / tierMax)
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex++) {
+      const y = firstTierCenter + (depth - 1) * tierGap + rowIndex * rowGap
+      guides.push({ depth, rowIndex, y })
+    }
+  }
+  return guides
+}
+
+export { depthLevelColor }
 export type { DependencyDepthResult }

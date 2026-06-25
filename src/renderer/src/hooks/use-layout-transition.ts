@@ -21,7 +21,8 @@ export function useLayoutTransition(
   enabled: boolean,
   durationMs: number,
   shellRef?: RefObject<HTMLDivElement | null>,
-  layoutTransitionRef?: React.MutableRefObject<boolean>
+  layoutTransitionRef?: React.MutableRefObject<boolean>,
+  onTransitionEnd?: () => void
 ): boolean {
   const { getNodes, setNodes } = useReactFlow()
   const prevKeyRef = useRef<string>('')
@@ -90,6 +91,7 @@ export function useLayoutTransition(
         runningRef.current = false
         setTransitionShell(false)
         rafRef.current = 0
+        onTransitionEnd?.()
       }
     }
 
@@ -100,7 +102,7 @@ export function useLayoutTransition(
       runningRef.current = false
       setTransitionShell(false)
     }
-  }, [positions, enabled, durationMs, getNodes, setNodes, shellRef, layoutTransitionRef])
+  }, [positions, enabled, durationMs, getNodes, setNodes, shellRef, layoutTransitionRef, onTransitionEnd])
 
   return runningRef.current
 }

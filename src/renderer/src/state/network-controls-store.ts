@@ -13,6 +13,8 @@ export interface NetworkControls {
   layoutMode: NetworkLayoutMode
   /** Multiplier for 3D node spread (compact ↔ spacious). */
   spreadScale: number
+  /** Bumped when layout-driving settings change — forces layout re-apply. */
+  layoutRevision: number
 }
 
 interface NetworkControlsStore extends NetworkControls {
@@ -32,7 +34,8 @@ const DEFAULTS: NetworkControls = {
   repelForce: -150,
   linkDistance: 48,
   layoutMode: 'organic',
-  spreadScale: 1
+  spreadScale: 1,
+  layoutRevision: 0
 }
 
 export const useNetworkControls = create<NetworkControlsStore>()(
@@ -40,9 +43,20 @@ export const useNetworkControls = create<NetworkControlsStore>()(
     (set) => ({
       ...DEFAULTS,
       resetViewNonce: 0,
-      set: (patch) => set(patch),
+      set: (patch) =>
+        set((state) => {
+          const next = { ...state, ...patch }
+          if (
+            patch.spreadScale !== undefined ||
+            patch.layoutMode !== undefined ||
+            patch.nodeScale !== undefined
+          ) {
+            next.layoutRevision = state.layoutRevision + 1
+          }
+          return next
+        }),
       requestResetView: () => set((s) => ({ resetViewNonce: s.resetViewNonce + 1 })),
-      reset: () => set({ ...DEFAULTS })
+      reset: () => set({ ...DEFAULTS, resetViewNonce: 0, layoutRevision: 0 })
     }),
     {
       name: 'prebase:network-controls-v5',
@@ -54,7 +68,9 @@ export const useNetworkControls = create<NetworkControlsStore>()(
           ...current,
           ...p,
           layoutMode: valid.includes(mode as (typeof valid)[number]) ? mode : 'organic',
-          spreadScale: p.spreadScale ?? 1
+          spreadScale: p.spreadScale ?? 1,
+          layoutRevision:
+            typeof p.layoutRevision === 'number' ? p.layoutRevision : current.layoutRevision
         }
       }
     }

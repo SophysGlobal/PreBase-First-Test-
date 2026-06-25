@@ -3,6 +3,7 @@ import type { ArchitectureLayerId } from '../../../core/utils/architecture-layer
 import { computeNodeImportance } from '../../../core/utils/architecture-layers'
 import { getRenderableNodeIds, type FlowAdapterOptions } from './flow-adapter'
 import { selectVisibleImportEdgeIds } from './edge-ranking'
+import { classifyEdgeCategory, edgeMatchesVisibleCategories, type GraphEdgeCategory } from './network-edges'
 import { getFileTypeColor, getFileTypeInfo } from './file-type-colors'
 
 export interface NetworkNode {
@@ -22,6 +23,8 @@ export interface NetworkLink {
   source: string
   target: string
   kind: 'import' | 'dependency'
+  category: GraphEdgeCategory
+  edgeId: string
 }
 
 export interface NetworkModel {
@@ -76,16 +79,30 @@ export function buildNetworkModel(
     ? null
     : selectVisibleImportEdgeIds(snapshot, maxRelated, entryNodeId)
 
+  const visibleCategories = options.visibleEdgeCategories ?? []
+
   const links: NetworkLink[] = []
   const seen = new Set<string>()
   for (const edge of snapshot.edges) {
     if (edge.kind !== 'import') continue
     if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) continue
     if (visibleImportIds && !visibleImportIds.has(edge.id)) continue
+    if (
+      visibleCategories.length > 0 &&
+      !edgeMatchesVisibleCategories(edge, snapshot, visibleCategories)
+    ) {
+      continue
+    }
     const key = `${edge.source}->${edge.target}`
     if (seen.has(key)) continue
     seen.add(key)
-    links.push({ source: edge.source, target: edge.target, kind: 'import' })
+    links.push({
+      source: edge.source,
+      target: edge.target,
+      kind: 'import',
+      category: classifyEdgeCategory(edge, snapshot),
+      edgeId: edge.id
+    })
   }
 
   return { nodes, links }

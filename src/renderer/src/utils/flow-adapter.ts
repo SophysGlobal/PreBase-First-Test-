@@ -96,6 +96,8 @@ export interface FlowAdapterOptions {
   edgeSimplificationThreshold?: number
   folderExpansionRadius?: number
   maxRenderedNodes?: number
+  /** Network graph only — filters edges by relationship category. */
+  visibleEdgeCategories?: import('./edge-categories').GraphEdgeCategory[]
   /**
    * When set (architecture/tree view only), restricts rendered nodes to the
    * focused architectural slice for the mode. Not used by the network view.

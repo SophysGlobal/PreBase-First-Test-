@@ -34,6 +34,7 @@ interface RecentProjectsStore {
     fileCount?: number
     dominantLanguage?: string
   }) => void
+  removeProject: (path: string) => void
   getRecentProjects: () => RecentProject[]
 }
 
@@ -61,6 +62,12 @@ export const useRecentProjectsStore = create<RecentProjectsStore>()(
             projects: [entry, ...withoutDuplicate].slice(0, MAX_RECENT)
           }
         })
+      },
+      removeProject: (path) => {
+        const id = projectIdFromPath(path)
+        set((state) => ({
+          projects: state.projects.filter((p) => p.id !== id)
+        }))
       },
       getRecentProjects: () => get().projects
     }),

@@ -526,6 +526,29 @@ export function finalizePyramidLayout(
   }
 }
 
+/** Pyramid finalize when positions are already React Flow top-left coordinates. */
+export function finalizePyramidLayoutTopLeft(
+  positions: Record<string, LayoutPosition>,
+  options: { nodeCount?: number; spacingScale?: number } = {}
+): void {
+  const ids = Object.keys(positions)
+  if (ids.length === 0) return
+
+  const { width, height } = LAYOUT_NODE_BOX
+  const nodeCount = options.nodeCount ?? ids.length
+  const scale = options.spacingScale ?? 1
+  const bounds = layoutMaxBounds(nodeCount, scale)
+  const measured = measureAxisAlignedBounds(positions, width, height)
+
+  if (measured.width <= bounds.width && measured.height <= bounds.height) return
+
+  const saved = Object.fromEntries(ids.map((id) => [id, { ...positions[id] }]))
+  capLayoutBoundingBox(positions, bounds.width, bounds.height, width, height)
+  if (countLayoutOverlaps(positions, width, height) === 0) return
+
+  for (const id of ids) positions[id] = saved[id]
+}
+
 export function centerGraph(positions: Record<string, LayoutPosition>): void {
   const vals = Object.values(positions)
   if (vals.length === 0) return
@@ -543,6 +566,20 @@ export function centerGraphHorizontally(positions: Record<string, LayoutPosition
   const cx = vals.reduce((s, p) => s + p.x, 0) / vals.length
   for (const id of Object.keys(positions)) {
     positions[id] = { x: positions[id].x - cx, y: positions[id].y }
+  }
+}
+
+/** Center layout using axis-aligned bounding box (top-left coordinates). */
+export function centerLayoutHorizontally(
+  positions: Record<string, LayoutPosition>,
+  boxW: number,
+  boxH: number
+): void {
+  const b = measureAxisAlignedBounds(positions, boxW, boxH)
+  if (b.width === 0 && b.height === 0) return
+  const centerX = (b.minX + b.maxX) / 2
+  for (const id of Object.keys(positions)) {
+    positions[id] = { x: positions[id].x - centerX, y: positions[id].y }
   }
 }
 

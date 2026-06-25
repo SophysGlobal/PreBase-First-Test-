@@ -1,3 +1,4 @@
+import { existsSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { resolveProjectFilePath } from '../core/utils/path-utils'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
@@ -103,6 +104,17 @@ app.whenReady().then(() => {
       return snapshot
     }
   )
+
+  ipcMain.handle('shell:show-item-in-folder', async (_, targetPath: string) => {
+    if (!targetPath?.trim()) {
+      return { success: false, error: 'No path provided' }
+    }
+    if (!existsSync(targetPath)) {
+      return { success: false, error: 'Project folder not found' }
+    }
+    shell.showItemInFolder(targetPath)
+    return { success: true }
+  })
 
   ipcMain.handle('file:read', async (_, filePath: string) => {
     const snapshot = projectService.getSnapshot()

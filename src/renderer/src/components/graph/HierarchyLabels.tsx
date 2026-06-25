@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useStoreApi } from '@xyflow/react'
-import { getHierarchyRingLayers } from '@core/layout/hierarchy-layout'
+import { getHierarchyRingGuides } from '@core/layout/hierarchy-layout'
+import { depthLevelColor } from '@core/layout/layout-depth-colors'
 import { LAYOUT_NODE_BOX } from '@core/layout/layout-constraints'
 import { useGraphStore } from '../../state/graph-store'
 import { useSettingsStore } from '../../state/settings-store'
@@ -8,17 +9,17 @@ import { layoutRuntimeFromSettings } from '../../utils/layout-settings'
 
 interface ScreenRing {
   key: string
+  depth: number
   left: number
   top: number
   size: number
 }
 
 interface HierarchyLabelsProps {
-  /** Hidden while the camera is moving to avoid extra compositor tiles during zoom. */
   hidden?: boolean
 }
 
-/** Subtle concentric ring guides — visual only; selection via pane hit-test in GraphCanvas. */
+/** Colored concentric ring guides — depth encoded by ring color. */
 export function HierarchyLabels({ hidden = false }: HierarchyLabelsProps) {
   const snapshot = useGraphStore((s) => s.snapshot)
   const layoutMode = useGraphStore((s) => s.layoutMode)
@@ -30,14 +31,17 @@ export function HierarchyLabels({ hidden = false }: HierarchyLabelsProps) {
   const ringData = useMemo(() => {
     if (layoutMode !== 'hierarchy' || !snapshot?.entryNodeId || !snapshot.positions) return null
     const runtime = layoutRuntimeFromSettings(settings)
-    const rings = getHierarchyRingLayers(
+    const rings = getHierarchyRingGuides(
       snapshot.nodes,
       snapshot.edges,
       snapshot.entryNodeId,
-      snapshot.positions,
       runtime,
       runtime.organizationMethod
-    )
+    ).map((g) => ({
+      key: `${g.depth}-${g.ringIndex}-${g.radius}`,
+      depth: g.depth,
+      radius: g.radius
+    }))
     if (rings.length === 0) return null
     const entry = snapshot.positions[snapshot.entryNodeId]
     const cx = (entry?.x ?? 0) + LAYOUT_NODE_BOX.width / 2
@@ -60,6 +64,7 @@ export function HierarchyLabels({ hidden = false }: HierarchyLabelsProps) {
       setScreenRings(
         rings.map((ring) => ({
           key: ring.key,
+          depth: ring.depth,
           left: sx - ring.radius * zoom,
           top: sy - ring.radius * zoom,
           size: ring.radius * 2 * zoom
@@ -69,7 +74,7 @@ export function HierarchyLabels({ hidden = false }: HierarchyLabelsProps) {
 
     const schedule = () => {
       window.clearTimeout(debounce)
-      debounce = window.setTimeout(project, 200)
+      debounce = window.setTimeout(project, 120)
     }
 
     project()
@@ -85,24 +90,25 @@ export function HierarchyLabels({ hidden = false }: HierarchyLabelsProps) {
 
   return (
     <div
-      className="pointer-events-none absolute inset-0 z-[2] overflow-hidden hierarchy-labels-layer"
+      className="pointer-events-none absolute inset-0 z-[2] overflow-hidden hierarchy-labels-layer transition-opacity duration-200"
       aria-hidden
     >
       {screenRings.map((ring) => {
         const selected = selectedRingKey === ring.key
+        const color = depthLevelColor(ring.depth)
         return (
           <div
             key={ring.key}
-            className={`absolute rounded-full border border-dashed transition-colors ${
-              selected
-                ? 'border-accent/55 bg-accent/[0.04] shadow-[0_0_0_1px_rgba(45,212,191,0.12)]'
-                : 'border-slate-400/25'
+            className={`absolute rounded-full border transition-colors ${
+              selected ? 'border-accent/55 shadow-[0_0_0_1px_rgba(45,212,191,0.12)]' : ''
             }`}
             style={{
               left: ring.left,
               top: ring.top,
               width: ring.size,
-              height: ring.size
+              height: ring.size,
+              borderColor: selected ? undefined : color,
+              backgroundColor: selected ? 'rgba(45,212,191,0.04)' : color.replace(/[\d.]+\)$/, '0.06)')
             }}
           />
         )

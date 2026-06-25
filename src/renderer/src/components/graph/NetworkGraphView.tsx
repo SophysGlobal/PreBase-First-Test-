@@ -14,24 +14,47 @@ import {
   IDENTITY_ORIENTATION,
   type Orientation3D
 } from '../../utils/network-rotation'
-import { type Point3D, type NetworkLayoutMode, layoutNetworkGraph } from '../../utils/network-layout'
+import { type Point3D } from '../../utils/network-layout'
+import { pickNetworkNodeAtScreenPoint } from '../../utils/network-picking'
 import { buildNetworkModel, type NetworkLink, type NetworkNode } from '../../utils/network-model'
 import type { FlowAdapterOptions } from '../../utils/flow-adapter'
-import { NetworkGraphLegend } from './GraphLegendBar'
+import { GraphZoomControls } from '../../features/graph-shared/GraphZoomControls'
+import { NetworkGraphLegend } from '../../features/network-graph/NetworkGraphLegend'
+import { buildPositionedNetworkGraph } from '../../features/network-graph/network-layout-engine'
+import {
+  applyDepthToRgba,
+  depthOpacity,
+  getEdgeCategoryColor,
+  normalizeDepthScale,
+  type GraphEdgeCategory
+} from '../../utils/edge-categories'
+import { debugNetworkLayout, debugNetworkEdge } from '../../utils/graph-debug'
 import { NodeInspector } from '../inspector/NodeInspector'
 import { AiChatBubble } from '../ai/AiChatBubble'
 
 const SELECTED_COLOR = '#2dd4bf'
 const SELECTED_GLOW = 'rgba(45,212,191,0.5)'
+const LAYOUT_SAFETY_MS = 25_000
 // Desaturated whitish for unselected nodes when a selection is active.
 const DIM_NODE = 'rgba(208,210,218,0.55)'
 
 type SimNode = NetworkNode & NodeObject
-type SimLink = NetworkLink & LinkObject
+type SimLink = NetworkLink & LinkObject & { category?: GraphEdgeCategory; edgeId?: string }
 
 function resolveId(ref: unknown): string {
   if (typeof ref === 'string') return ref
   return (ref as { id: string }).id
+}
+
+/** Force-graph mutates link endpoints to node object refs — always pass fresh string IDs. */
+function cloneLinksWithStringIds(links: NetworkLink[]): SimLink[] {
+  return links.map((link) => ({
+    kind: link.kind,
+    source: resolveId(link.source),
+    target: resolveId(link.target),
+    category: link.category,
+    edgeId: link.edgeId
+  })) as SimLink[]
 }
 
 export function NetworkGraphView() {
@@ -54,6 +77,7 @@ export function NetworkGraphView() {
   const networkDragDirection = useSettingsStore((s) => s.networkDragDirection)
   const lodThreshold = useSettingsStore((s) => s.networkLodNodeThreshold)
   const edgeOpacity = useSettingsStore((s) => s.networkEdgeOpacity)
+  const visibleEdgeCategories = useSettingsStore((s) => s.visibleEdgeCategories)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const fgRef = useRef<ForceGraphMethods<SimNode, SimLink> | undefined>(undefined)
@@ -61,16 +85,30 @@ export function NetworkGraphView() {
   const controls = useNetworkControls()
   const networkLayoutMode = useNetworkControls((s) => s.layoutMode)
   const networkSpreadScale = useNetworkControls((s) => s.spreadScale)
+  const networkLayoutRevision = useNetworkControls((s) => s.layoutRevision)
   const resetViewNonce = useNetworkControls((s) => s.resetViewNonce)
   const [controlsHydrated, setControlsHydrated] = useState(() =>
     useNetworkControls.persist.hasHydrated()
   )
+  const [layoutReady, setLayoutReady] = useState(false)
+  const [layoutError, setLayoutError] = useState<string | null>(null)
+  const [layoutRetryNonce, setLayoutRetryNonce] = useState(0)
+  const layoutPassRef = useRef(0)
+  const [renderGraphData, setRenderGraphData] = useState<{ nodes: SimNode[]; links: SimLink[] }>({
+    nodes: [],
+    links: []
+  })
+  const renderNodesRef = useRef<SimNode[]>([])
+  const nodeByIdRef = useRef<Map<string, SimNode>>(new Map())
+  const edgeDebugRef = useRef(0)
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [liveCanvasRedraw, setLiveCanvasRedraw] = useState(false)
   const liveCanvasRedrawRef = useRef(false)
   liveCanvasRedrawRef.current = liveCanvasRedraw
 
   const orbit = useNetworkOrbit(reduceMotion)
+  const orbitResetRef = useRef(orbit.reset)
+  orbitResetRef.current = orbit.reset
 
   // ── Refs that the render loop reads (no per-frame React state) ───────────
   const zoomRef = useRef(1)
@@ -98,20 +136,7 @@ export function NetworkGraphView() {
   const centroidRef = useRef({ x: 0, y: 0 })
   const rotatingRef = useRef(false)
   const wakeRafRef = useRef<() => void>(() => {})
-  const layoutCacheRef = useRef(new Map<string, Map<string, Point3D>>())
-
-  function networkLayoutCacheKey(
-    mode: NetworkLayoutMode,
-    nodes: NetworkNode[],
-    spread: number,
-    radius: number
-  ): string {
-    const ids = nodes
-      .map((n) => n.id)
-      .sort()
-      .join('\0')
-    return `${mode}|${spread.toFixed(2)}|${Math.round(radius)}|${ids}`
-  }
+  const layoutRevisionRef = useRef(0)
 
   useEffect(() => {
     const el = containerRef.current
@@ -146,7 +171,8 @@ export function NetworkGraphView() {
       dragEnabledNodeIds: new Set<string>(),
       showEdgeLabels: false,
       visibleRelatedConnections,
-      maxRenderedNodes
+      maxRenderedNodes,
+      visibleEdgeCategories
     }
     return buildNetworkModel(snapshot, opts)
   }, [
@@ -158,7 +184,8 @@ export function NetworkGraphView() {
     hideLowImportance,
     expandedFolderIds,
     visibleRelatedConnections,
-    maxRenderedNodes
+    maxRenderedNodes,
+    visibleEdgeCategories
   ])
 
   const neighborIds = useMemo(() => {
@@ -180,14 +207,18 @@ export function NetworkGraphView() {
   const hoveredRef = useRef(hoveredNodeId)
   hoveredRef.current = hoveredNodeId
 
-  const nodeCount = model.nodes.length
-  const sphereRadius =
-    Math.max(190, Math.min(310, Math.sqrt(Math.max(1, nodeCount)) * 22)) * networkSpreadScale
+  const nodeCount = renderGraphData.nodes.length
+  const sphereRadiusRef = useRef(240)
   const hugeGraph = nodeCount > Math.max(800, lodThreshold)
 
-  const getGlobalSettle = useCallback(() => {
-    const s = settleRef.current
-    return { x: s.ox, y: s.oy }
+  const getDisplayedNodePosition = useCallback((nodeId: string) => {
+    const node = nodeByIdRef.current.get(nodeId)
+    if (!node) return null
+    const off = settleRef.current
+    return {
+      x: (node.x ?? 0) + off.ox,
+      y: (node.y ?? 0) + off.oy
+    }
   }, [])
 
   const impulseSettle = useCallback(
@@ -216,40 +247,114 @@ export function NetworkGraphView() {
     g.d3Force('center')?.strength(0)
   }, [model])
 
-  const seedNetworkLayout = useCallback(() => {
-    const cacheKey = networkLayoutCacheKey(
-      networkLayoutMode,
-      model.nodes,
-      networkSpreadScale,
-      sphereRadius
-    )
-    let layout = layoutCacheRef.current.get(cacheKey)
-    if (!layout) {
-      layout = layoutNetworkGraph(networkLayoutMode, model.nodes, model.links, sphereRadius)
-      layoutCacheRef.current.set(cacheKey, layout)
-      if (layoutCacheRef.current.size > 10) {
-        const oldest = layoutCacheRef.current.keys().next().value
-        if (oldest) layoutCacheRef.current.delete(oldest)
+  const applyNetworkLayout = useCallback(() => {
+    const pass = ++layoutPassRef.current
+    const startedAt = performance.now()
+    const controlsState = useNetworkControls.getState()
+    const projectPath = useGraphStore.getState().snapshot?.projectPath
+    const edgeOpacitySetting = useSettingsStore.getState().networkEdgeOpacity
+    const layoutModes = ['organic', 'sphere', 'constellation', 'clustered', 'radial'] as const
+    const layoutRegistered = layoutModes.includes(controlsState.layoutMode)
+
+    if (!model.nodes.length) {
+      setRenderGraphData({ nodes: [], links: [] })
+      renderNodesRef.current = []
+      nodeByIdRef.current = new Map()
+      setLayoutReady(false)
+      setLayoutError(null)
+      debugNetworkLayout({
+        pass,
+        phase: 'empty-model',
+        projectPath,
+        nodeCount: 0,
+        edgeCount: 0,
+        layoutMode: controlsState.layoutMode,
+        layoutRegistered,
+        spreadScale: controlsState.spreadScale,
+        nodeScale: controlsState.nodeScale,
+        linkWidth: controlsState.linkWidth,
+        edgeOpacity: edgeOpacitySetting,
+        loadingCleared: false
+      })
+      return
+    }
+
+    try {
+      layoutRevisionRef.current = controlsState.layoutRevision
+      const result = buildPositionedNetworkGraph(model.nodes, model.links)
+      if (pass !== layoutPassRef.current) return
+
+      sphereRadiusRef.current = result.sphereRadius
+      baseRef.current = result.layout
+      centroidRef.current = { x: 0, y: 0 }
+      frozenRef.current = true
+
+      const depths = depthRef.current
+      depths.clear()
+      for (const nd of result.nodes) {
+        const base = result.layout.get(nd.id)
+        if (!base) continue
+        const projected = applyGraphRotation3D(base, 0, 0, IDENTITY_ORIENTATION)
+        depths.set(nd.id, projected.depthScale)
+      }
+
+      const simNodes = result.nodes as SimNode[]
+      renderNodesRef.current = simNodes
+      const byId = new Map<string, SimNode>()
+      for (const node of simNodes) byId.set(node.id, node)
+      nodeByIdRef.current = byId
+      setRenderGraphData({ nodes: simNodes, links: cloneLinksWithStringIds(model.links) })
+      setLayoutReady(true)
+      setLayoutError(null)
+      setAnimating(true)
+      fgRef.current?.resumeAnimation()
+
+      debugNetworkLayout({
+        pass,
+        phase: 'success',
+        projectPath,
+        durationMs: Math.round(performance.now() - startedAt),
+        nodeCount: model.nodes.length,
+        edgeCount: model.links.length,
+        layoutMode: result.layoutMode,
+        layoutRegistered,
+        spreadScale: result.spreadScale,
+        nodeScale: controlsState.nodeScale,
+        linkWidth: controlsState.linkWidth,
+        edgeOpacity: edgeOpacitySetting,
+        usedFallback: result.usedFallback,
+        renderedNodeCount: simNodes.length,
+        loadingCleared: true
+      })
+    } catch (error) {
+      if (pass !== layoutPassRef.current) return
+      const message = error instanceof Error ? error.message : 'Network layout failed'
+      setLayoutReady(false)
+      setLayoutError(message)
+      debugNetworkLayout({
+        pass,
+        phase: 'error',
+        projectPath,
+        durationMs: Math.round(performance.now() - startedAt),
+        nodeCount: model.nodes.length,
+        edgeCount: model.links.length,
+        layoutMode: controlsState.layoutMode,
+        layoutRegistered,
+        spreadScale: controlsState.spreadScale,
+        nodeScale: controlsState.nodeScale,
+        linkWidth: controlsState.linkWidth,
+        edgeOpacity: edgeOpacitySetting,
+        error: message,
+        loadingCleared: false
+      })
+      if (import.meta.env.DEV) {
+        console.error('[NetworkGraphView] layout generation failed', error)
       }
     }
-    baseRef.current = layout
-    centroidRef.current = { x: 0, y: 0 }
-    frozenRef.current = true
-    const depths = depthRef.current
-    for (const nd of model.nodes as SimNode[]) {
-      const base = layout.get(nd.id)
-      if (!base) continue
-      const projected = applyGraphRotation3D(base, 0, 0, IDENTITY_ORIENTATION)
-      nd.x = projected.x
-      nd.y = projected.y
-      nd.fx = projected.x
-      nd.fy = projected.y
-      depths.set(nd.id, projected.depthScale)
-    }
-  }, [model.nodes, model.links, sphereRadius, networkLayoutMode, networkSpreadScale])
+  }, [model.nodes, model.links, setAnimating])
 
-  const seedNetworkLayoutRef = useRef(seedNetworkLayout)
-  seedNetworkLayoutRef.current = seedNetworkLayout
+  const applyNetworkLayoutRef = useRef(applyNetworkLayout)
+  applyNetworkLayoutRef.current = applyNetworkLayout
 
   const fitView = useCallback(
     (durationMs = 400) => {
@@ -275,37 +380,73 @@ export function NetworkGraphView() {
   fitViewRef.current = fitView
 
   useEffect(() => {
-    if (useNetworkControls.persist.hasHydrated()) {
-      setControlsHydrated(true)
-      return
-    }
-    return useNetworkControls.persist.onFinishHydration(() => {
+    const unsubFinish = useNetworkControls.persist.onFinishHydration(() => {
       setControlsHydrated(true)
     })
+    setControlsHydrated(useNetworkControls.persist.hasHydrated())
+    return unsubFinish
   }, [])
 
-  // Re-seed 3D layout when mode/spread or graph data changes (after persisted controls load).
+  // Re-seed 3D layout when settings or graph data change (after persisted controls load).
   useEffect(() => {
     if (!controlsHydrated) return
+
+    setLayoutError(null)
+    edgeDebugRef.current = 0
     settleRef.current = { ox: 0, oy: 0, vx: 0, vy: 0 }
     frozenRef.current = false
     baseRef.current = new Map()
     depthRef.current = new Map()
-    orbit.reset()
-    seedNetworkLayoutRef.current()
-    setAnimating(true)
-    fgRef.current?.resumeAnimation()
-    const g = fgRef.current
-    if (!g || !model.nodes.length) return
-    const t = setTimeout(() => fitViewRef.current(), 240)
+    orbitResetRef.current()
+    applyNetworkLayoutRef.current()
+  }, [
+    model,
+    networkLayoutMode,
+    networkSpreadScale,
+    networkLayoutRevision,
+    controlsHydrated,
+    visibleRelatedConnections,
+    layoutRetryNonce
+  ])
+
+  useEffect(() => {
+    if (!controlsHydrated || layoutReady || layoutError) return
+    const timeout = window.setTimeout(() => {
+      if (layoutReady || layoutError) return
+      const message = 'Network layout is taking longer than expected.'
+      setLayoutError(message)
+      debugNetworkLayout({
+        phase: 'safety-timeout',
+        nodeCount: model.nodes.length,
+        edgeCount: model.links.length,
+        layoutMode: networkLayoutMode,
+        spreadScale: networkSpreadScale,
+        loadingCleared: false
+      })
+    }, LAYOUT_SAFETY_MS)
+    return () => window.clearTimeout(timeout)
+  }, [
+    controlsHydrated,
+    layoutReady,
+    layoutError,
+    model.nodes.length,
+    model.links.length,
+    networkLayoutMode,
+    networkSpreadScale,
+    layoutRetryNonce
+  ])
+
+  useEffect(() => {
+    if (!layoutReady || !model.nodes.length) return
+    const t = setTimeout(() => fitViewRef.current(), 80)
     return () => clearTimeout(t)
-  }, [model, orbit, networkLayoutMode, networkSpreadScale, setAnimating, controlsHydrated])
+  }, [layoutReady, model.nodes.length])
 
   // Explicit "Reset view" request from the sidebar → re-fit camera + rotation.
   useEffect(() => {
     if (resetViewNonce === 0) return
     orbit.reset()
-    seedNetworkLayoutRef.current()
+    applyNetworkLayoutRef.current()
     applyRotationRef.current(IDENTITY_ORIENTATION)
     fitViewRef.current(400)
   }, [resetViewNonce, orbit])
@@ -330,24 +471,22 @@ export function NetworkGraphView() {
     return orbit.attach(root)
   }, [orbit, dims.width, dims.height])
 
-  const applyRotation = useCallback(
-    (orientation: Orientation3D) => {
-      if (!frozenRef.current) return
-      const { x: cx, y: cy } = centroidRef.current
-      const depths = depthRef.current
-      for (const nd of model.nodes as SimNode[]) {
-        const base = baseRef.current.get(nd.id)
-        if (!base) continue
-        const projected = applyGraphRotation3D(base, cx, cy, orientation)
-        nd.x = projected.x
-        nd.y = projected.y
-        nd.fx = projected.x
-        nd.fy = projected.y
-        depths.set(nd.id, projected.depthScale)
-      }
-    },
-    [model.nodes]
-  )
+  const applyRotation = useCallback((orientation: Orientation3D) => {
+    if (!frozenRef.current) return
+    const { x: cx, y: cy } = centroidRef.current
+    const depths = depthRef.current
+    for (const nd of renderNodesRef.current) {
+      const base = baseRef.current.get(nd.id)
+      if (!base) continue
+      const projected = applyGraphRotation3D(base, cx, cy, orientation)
+      nd.x = projected.x
+      nd.y = projected.y
+      nd.fx = projected.x
+      nd.fy = projected.y
+      depths.set(nd.id, projected.depthScale)
+    }
+    fgRef.current?.resumeAnimation()
+  }, [])
 
   const applyRotationRef = useRef(applyRotation)
   applyRotationRef.current = applyRotation
@@ -360,25 +499,21 @@ export function NetworkGraphView() {
   const pickNodeIdAt = useCallback(
     (clientX: number, clientY: number): string | null => {
       const g = fgRef.current
-      if (!g) return null
-      const coords = g.screen2GraphCoords(clientX, clientY)
-      const off = settleRef.current
-      let bestId: string | null = null
-      let bestDepth = -Infinity
-      for (const nd of model.nodes as SimNode[]) {
-        const x = (nd.x ?? 0) + off.ox
-        const y = (nd.y ?? 0) + off.oy
-        const r = hitRadiusFor(nd)
-        if (Math.hypot(coords.x - x, coords.y - y) > r) continue
-        const depth = depthRef.current.get(nd.id) ?? 1
-        if (depth >= bestDepth) {
-          bestDepth = depth
-          bestId = nd.id
-        }
-      }
-      return bestId
+      const root = containerRef.current
+      if (!g || !root) return null
+      const rect = root.getBoundingClientRect()
+      return pickNetworkNodeAtScreenPoint({
+        clientX,
+        clientY,
+        containerRect: rect,
+        screen2GraphCoords: (x, y) => g.screen2GraphCoords(x, y),
+        nodes: renderNodesRef.current,
+        settleOffset: { x: settleRef.current.ox, y: settleRef.current.oy },
+        hitRadiusFor,
+        depthFor: (id) => depthRef.current.get(id) ?? 0
+      })
     },
-    [model.nodes, hitRadiusFor]
+    [hitRadiusFor]
   )
   const pickNodeIdAtRef = useRef(pickNodeIdAt)
   pickNodeIdAtRef.current = pickNodeIdAt
@@ -512,10 +647,10 @@ export function NetworkGraphView() {
   }, [])
 
   const onNodeHover = useCallback(
-    (node: SimNode | null) => {
-      setHoveredNodeId(node?.id ?? null)
+    (nodeId: string | null) => {
+      setHoveredNodeId(nodeId)
       clearHoverTimer()
-      if (!node) {
+      if (!nodeId) {
         intentRef.current = null
         targetHoverRef.current = 1
         wakeRafRef.current()
@@ -524,34 +659,59 @@ export function NetworkGraphView() {
       targetHoverRef.current = 1.08
       wakeRafRef.current()
       hoverTimerRef.current = setTimeout(() => {
-        intentRef.current = node.id
+        intentRef.current = nodeId
       }, nodeDragDelayMs)
     },
     [clearHoverTimer, nodeDragDelayMs]
   )
+  const onNodeHoverRef = useRef(onNodeHover)
+  onNodeHoverRef.current = onNodeHover
+
+  // Unified hover picking — same pipeline as click (pointermove on container).
+  useEffect(() => {
+    const root = containerRef.current
+    if (!root || !layoutReady || !controlsHydrated || layoutError) return
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (orbit.isDragging()) return
+      const nodeId = pickNodeIdAtRef.current(e.clientX, e.clientY)
+      if (nodeId !== hoveredRef.current) {
+        onNodeHoverRef.current(nodeId)
+      }
+    }
+
+    const onPointerLeave = () => {
+      onNodeHoverRef.current(null)
+    }
+
+    root.addEventListener('pointermove', onPointerMove)
+    root.addEventListener('pointerleave', onPointerLeave)
+    return () => {
+      root.removeEventListener('pointermove', onPointerMove)
+      root.removeEventListener('pointerleave', onPointerLeave)
+    }
+  }, [orbit, layoutReady, controlsHydrated, layoutError])
 
   useEffect(() => () => clearHoverTimer(), [clearHoverTimer])
 
   const nodeCanvasObject = useCallback(
     (node: SimNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
-      const baseX = node.x ?? 0
-      const baseY = node.y ?? 0
-      const off = getGlobalSettle()
-      const x = baseX + off.x
-      const y = baseY + off.y
+      const pos = getDisplayedNodePosition(node.id)
+      if (!pos) return
+      const x = pos.x
+      const y = pos.y
       const depthScale = depthRef.current.get(node.id) ?? FOCAL_LENGTH / (FOCAL_LENGTH + 0)
       const sel = selectedRef.current
       const isSelected = node.id === sel
       const isHovered = node.id === hoveredRef.current
       const dimmed = sel !== null && !neighborRef.current.has(node.id) && !isSelected
 
-      let scaleMul = Math.max(0.72, Math.min(1.18, depthScale))
+      let scaleMul = Math.max(0.82, Math.min(1.14, 0.86 + normalizeDepthScale(depthScale) * 0.28))
       if (isHovered) scaleMul = Math.max(scaleMul, hoverScaleRef.current)
       if (isSelected) scaleMul = Math.max(scaleMul, 1.12)
 
       const r = (Math.sqrt(node.val) * controls.nodeScale * 1.7 + 1.6) * scaleMul
-      const depthT = Math.max(0, Math.min(1, (depthScale - 0.78) / 0.46))
-      const depthAlpha = Math.max(0.42, Math.min(1, 0.48 + depthT * 0.5))
+      const depthAlpha = depthOpacity(0.35, 1, depthScale)
 
       ctx.beginPath()
       ctx.arc(x, y, r, 0, 2 * Math.PI)
@@ -579,55 +739,64 @@ export function NetworkGraphView() {
         ctx.stroke()
       }
 
-      if (zoomRef.current >= controls.labelZoomThreshold || isSelected || isHovered) {
+      if (isHovered) {
         const fontSize = Math.max(9, 10 / globalScale)
         ctx.font = `${fontSize}px system-ui, sans-serif`
-        ctx.fillStyle = isSelected ? 'rgba(94,234,212,0.95)' : 'rgba(205,205,215,0.9)'
+        ctx.fillStyle = 'rgba(205,205,215,0.95)'
         ctx.textAlign = 'left'
         ctx.textBaseline = 'middle'
         ctx.fillText(node.label, x + r + 3, y)
       }
     },
-    [controls.nodeScale, controls.labelZoomThreshold, getGlobalSettle]
+    [controls.nodeScale, getDisplayedNodePosition]
   )
 
   const nodePointerAreaPaint = useCallback(
     (node: SimNode, color: string, ctx: CanvasRenderingContext2D) => {
-      const off = settleRef.current
-      const x = (node.x ?? 0) + off.ox
-      const y = (node.y ?? 0) + off.oy
+      const pos = getDisplayedNodePosition(node.id)
+      if (!pos) return
       const r = hitRadiusFor(node)
       ctx.fillStyle = color
       ctx.beginPath()
-      ctx.arc(x, y, r, 0, 2 * Math.PI)
+      ctx.arc(pos.x, pos.y, r, 0, 2 * Math.PI)
       ctx.fill()
     },
-    [hitRadiusFor]
+    [hitRadiusFor, getDisplayedNodePosition]
   )
 
   const linkDepthAlpha = useCallback((srcId: string, tgtId: string) => {
     const srcDepth = depthRef.current.get(srcId) ?? 0.95
     const tgtDepth = depthRef.current.get(tgtId) ?? 0.95
     const avg = (srcDepth + tgtDepth) / 2
-    const t = Math.max(0, Math.min(1, (avg - 0.78) / 0.46))
-    return 0.1 + t * 0.62
+    return normalizeDepthScale(avg)
   }, [])
 
   const linkColor = useCallback(
     (l: SimLink) => {
       const s = resolveId(l.source)
       const t = resolveId(l.target)
-      const depthA = linkDepthAlpha(s, t)
+      const depthT = linkDepthAlpha(s, t)
+      const avgDepth =
+        ((depthRef.current.get(s) ?? 0.95) + (depthRef.current.get(t) ?? 0.95)) / 2
+      const category = l.category ?? 'import'
+      const base = getEdgeCategoryColor(category)
       const sel = selectedRef.current
       if (!sel) {
-        const base = Math.min(0.38, edgeOpacity * 0.62 * depthA)
-        return `rgba(168,172,184,${base})`
+        const tinted = applyDepthToRgba(base, avgDepth, 0.22)
+        const m = tinted.match(/rgba\((\d+),(\d+),(\d+),([\d.]+)\)/)
+        if (!m) return tinted
+        const alpha = Math.min(0.72, Number(m[4]) * edgeOpacity * (0.55 + depthT * 0.45))
+        return `rgba(${m[1]},${m[2]},${m[3]},${alpha.toFixed(3)})`
       }
       const connected = s === sel || t === sel
       if (connected) {
-        return `rgba(94,234,212,${Math.min(0.5, 0.24 + depthA * 0.38)})`
+        const boost = applyDepthToRgba('rgba(94,234,212,0.85)', avgDepth, 0.35)
+        return boost
       }
-      return `rgba(150,154,166,${Math.max(0.04, edgeOpacity * 0.16 * depthA)})`
+      const dim = applyDepthToRgba(base, avgDepth, 0.12)
+      const m = dim.match(/rgba\((\d+),(\d+),(\d+),([\d.]+)\)/)
+      if (!m) return dim
+      return `rgba(${m[1]},${m[2]},${m[3]},${(Number(m[4]) * 0.45).toFixed(3)})`
     },
     [edgeOpacity, linkDepthAlpha]
   )
@@ -638,7 +807,7 @@ export function NetworkGraphView() {
       const s = resolveId(l.source)
       const t = resolveId(l.target)
       const depthA = linkDepthAlpha(s, t)
-      const scaled = base * (0.75 + depthA * 0.35)
+      const scaled = base * (0.65 + depthA * 0.55)
       const sel = selectedRef.current
       if (!sel) return scaled
       return s === sel || t === sel ? scaled * 1.55 : scaled * 0.65
@@ -648,23 +817,36 @@ export function NetworkGraphView() {
 
   const linkCanvasObject = useCallback(
     (link: SimLink, ctx: CanvasRenderingContext2D, globalScale: number) => {
-      const src = (typeof link.source === 'object' ? link.source : null) as SimNode | null
-      const tgt = (typeof link.target === 'object' ? link.target : null) as SimNode | null
-      if (!src || !tgt) return
-      const offSrc = getGlobalSettle()
-      const offTgt = offSrc
-      const sx = (src.x ?? 0) + offSrc.x
-      const sy = (src.y ?? 0) + offSrc.y
-      const tx = (tgt.x ?? 0) + offTgt.x
-      const ty = (tgt.y ?? 0) + offTgt.y
+      const srcId = resolveId(link.source)
+      const tgtId = resolveId(link.target)
+      const srcPos = getDisplayedNodePosition(srcId)
+      const tgtPos = getDisplayedNodePosition(tgtId)
+      if (!srcPos || !tgtPos) return
+
+      if (import.meta.env.DEV && edgeDebugRef.current < 3) {
+        edgeDebugRef.current++
+        const srcNode = nodeByIdRef.current.get(srcId)
+        const tgtNode = nodeByIdRef.current.get(tgtId)
+        debugNetworkEdge({
+          srcId,
+          tgtId,
+          sourceBase: srcNode ? { x: srcNode.x, y: srcNode.y } : null,
+          targetBase: tgtNode ? { x: tgtNode.x, y: tgtNode.y } : null,
+          sourceDisplay: srcPos,
+          targetDisplay: tgtPos,
+          zoom: zoomRef.current,
+          layoutMode: useNetworkControls.getState().layoutMode
+        })
+      }
+
       ctx.beginPath()
-      ctx.moveTo(sx, sy)
-      ctx.lineTo(tx, ty)
+      ctx.moveTo(srcPos.x, srcPos.y)
+      ctx.lineTo(tgtPos.x, tgtPos.y)
       ctx.strokeStyle = linkColor(link)
       ctx.lineWidth = linkWidth(link) / globalScale
       ctx.stroke()
     },
-    [getGlobalSettle, linkColor, linkWidth]
+    [getDisplayedNodePosition, linkColor, linkWidth]
   )
 
   useEffect(() => {
@@ -676,13 +858,39 @@ export function NetworkGraphView() {
 
   if (!snapshot) return null
 
+  const graphReady = controlsHydrated && layoutReady && !layoutError
+
   return (
     <div ref={containerRef} className="relative flex-1 h-full overflow-hidden bg-[#0d0e10]">
+      {!graphReady && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0d0e10] text-text-muted text-sm z-10 px-6 text-center">
+          {layoutError ? (
+            <>
+              <p className="text-text-secondary">{layoutError}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setLayoutError(null)
+                  setLayoutRetryNonce((n) => n + 1)
+                }}
+                className="px-3 py-1.5 rounded-md text-xs font-medium border border-border-subtle bg-surface-overlay text-text-secondary hover:text-text-primary hover:border-border-default transition-colors"
+              >
+                Retry layout
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="w-5 h-5 rounded-full border-2 border-accent/30 border-t-accent animate-spin" />
+              <p>Preparing network layout…</p>
+            </>
+          )}
+        </div>
+      )}
       <ForceGraph2D
         ref={fgRef}
         width={dims.width}
         height={dims.height}
-        graphData={model}
+        graphData={renderGraphData}
         backgroundColor="rgba(13,14,16,0)"
         enableNodeDrag={false}
         enablePanInteraction={false}
@@ -709,8 +917,28 @@ export function NetworkGraphView() {
         onZoom={(transform) => {
           zoomRef.current = transform.k
         }}
-        onNodeHover={(n) => onNodeHover(n as SimNode | null)}
       />
+
+      {graphReady && (
+        <GraphZoomControls
+          onZoomIn={() => {
+            const g = fgRef.current
+            if (!g) return
+            const k = g.zoom()
+            g.zoom(k * 1.25, 200)
+            setAnimating(true)
+          }}
+          onZoomOut={() => {
+            const g = fgRef.current
+            if (!g) return
+            const k = g.zoom()
+            g.zoom(k / 1.25, 200)
+            setAnimating(true)
+          }}
+          onFitView={() => fitViewRef.current(400)}
+          onResetView={() => useNetworkControls.getState().requestResetView()}
+        />
+      )}
 
       <NetworkGraphLegend nodes={snapshot.nodes} />
       <NodeInspector />
@@ -719,7 +947,7 @@ export function NetworkGraphView() {
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-2 rounded-full bg-[#141518] border border-border-subtle text-xs text-text-secondary pointer-events-none max-w-[90vw] flex-wrap justify-center">
         <span>{nodeCount} nodes</span>
         <span className="w-px h-3 bg-border-subtle" />
-        <span>{model.links.length} links</span>
+        <span>{renderGraphData.links.length} links</span>
         {hugeGraph && (
           <>
             <span className="w-px h-3 bg-border-subtle" />

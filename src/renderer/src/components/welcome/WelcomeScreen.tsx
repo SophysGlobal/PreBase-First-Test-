@@ -37,7 +37,7 @@ export function WelcomeScreen({ onOpenProject, onOpenProjectPath, isLoading }: W
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-        className="relative z-10 flex flex-col items-center max-w-2xl px-8 text-center"
+        className="relative z-10 flex flex-col items-center max-w-4xl px-8 text-center"
       >
         <div className="flex items-center justify-center w-16 h-16 mb-6 rounded-2xl bg-gradient-to-br from-accent/20 to-purple-500/10 border border-border-subtle">
           <Sparkles className="w-8 h-8 text-accent" />

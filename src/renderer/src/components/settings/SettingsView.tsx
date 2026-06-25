@@ -209,10 +209,48 @@ export function SettingsView() {
                     className="accent-teal-400"
                   />
                 </Row>
+                <Row
+                  label="Legend dim during interaction"
+                  hint="How much the architecture legend fades while panning, zooming, or selecting."
+                >
+                  <input
+                    type="range"
+                    min={0}
+                    max={80}
+                    step={5}
+                    value={settings.legendInteractionDimAmount}
+                    onChange={(e) =>
+                      settings.setLegendInteractionDimAmount(Number(e.target.value))
+                    }
+                    className="w-32 accent-teal-400"
+                  />
+                  <span className="text-[10px] text-text-muted tabular-nums ml-2">
+                    {settings.legendInteractionDimAmount}%
+                  </span>
+                </Row>
               </Panel>
             )}
 
-            {category === 'sidebar' && <SidebarCustomizationPanel />}
+            {category === 'sidebar' && (
+              <>
+                <Panel title="Sidebar" description="Graph sidebar behavior.">
+                  <Row
+                    label="Collapse long sections by default"
+                    hint="Edge categories, layout, and organization sections start collapsed."
+                  >
+                    <input
+                      type="checkbox"
+                      checked={settings.collapseSidebarSectionsDefault}
+                      onChange={(e) =>
+                        settings.setCollapseSidebarSectionsDefault(e.target.checked)
+                      }
+                      className="accent-teal-400"
+                    />
+                  </Row>
+                </Panel>
+                <SidebarCustomizationPanel />
+              </>
+            )}
 
             {category === 'editor' && (
               <Panel title="Editor" description="Monaco code viewer preferences.">

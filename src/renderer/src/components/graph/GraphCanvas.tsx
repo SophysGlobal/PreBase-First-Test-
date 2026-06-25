@@ -16,6 +16,7 @@ import { ArchitectureGraphLegend } from './GraphLegendBar'
 import { ArchitectureOverview } from './ArchitectureOverview'
 import { GraphMinimap } from './GraphMinimap'
 import { HierarchyLabels } from './HierarchyLabels'
+import { PyramidLabels } from './PyramidLabels'
 import { NodeInspector } from '../inspector/NodeInspector'
 import { RingInspector } from '../inspector/RingInspector'
 import { AiChatBubble } from '../ai/AiChatBubble'
@@ -83,56 +84,71 @@ function InitialViewportController() {
   return null
 }
 
-function LayoutViewportController() {
-  const { fitView, getNodes } = useReactFlow()
+function LayoutTransitionController({
+  shellRef,
+  layoutTransitionRef
+}: {
+  shellRef: React.RefObject<HTMLDivElement | null>
+  layoutTransitionRef: React.MutableRefObject<boolean>
+}) {
+  const snapshot = useGraphStore((s) => s.snapshot)
   const layoutMode = useGraphStore((s) => s.layoutMode)
   const architectureMode = useGraphStore((s) => s.architectureMode)
   const initialCameraDone = useGraphStore((s) => s.initialCameraDone)
-  const initialZoom = useSettingsStore((s) => s.initialZoom)
-  const layoutAnimationDuration = useSettingsStore((s) => s.layoutAnimationDuration)
   const reduceMotion = useSettingsStore((s) => s.reduceMotion)
+  const layoutAnimationDuration = useSettingsStore((s) => s.layoutAnimationDuration)
+  const initialZoom = useSettingsStore((s) => s.initialZoom)
+  const { fitView, getNodes } = useReactFlow()
+  const duration = reduceMotion ? 0 : Math.min(layoutAnimationDuration, 520)
+  const pendingFitRef = useRef<{ layout: import('@core/types').LayoutMode } | null>(null)
   const prevLayout = useRef(layoutMode)
   const prevMode = useRef(architectureMode)
 
   useEffect(() => {
     if (!initialCameraDone) return
-    // Refit when either the layout preset OR the architecture-mode slice changes,
-    // since the focused slice can be a small fraction of the project.
     if (prevLayout.current === layoutMode && prevMode.current === architectureMode) return
     prevLayout.current = layoutMode
     prevMode.current = architectureMode
+    pendingFitRef.current = { layout: layoutMode }
+  }, [layoutMode, architectureMode, initialCameraDone])
 
-    const fit = viewportFitForLayout(layoutMode)
-    const t = setTimeout(() => {
-      const nodes = getNodes()
-      if (nodes.length === 0) return
-      const duration =
-        reduceMotion || nodes.length > 40 ? 0 : Math.min(layoutAnimationDuration, 500)
-      void fitView({
-        nodes,
-        padding: fit.padding,
-        minZoom: fit.minZoom,
-        maxZoom: Math.min(fit.maxZoom, Math.max(0.82, initialZoom)),
-        duration
-      })
-    }, 120)
-    return () => clearTimeout(t)
-  }, [
-    layoutMode,
-    architectureMode,
-    initialCameraDone,
-    getNodes,
-    fitView,
-    initialZoom,
-    layoutAnimationDuration,
-    reduceMotion
-  ])
+  const onTransitionEnd = useCallback(() => {
+    const pending = pendingFitRef.current
+    if (!pending) return
+    pendingFitRef.current = null
+    const nodes = getNodes()
+    if (nodes.length === 0) return
+    const fit = viewportFitForLayout(pending.layout)
+    void fitView({
+      nodes,
+      padding: fit.padding,
+      minZoom: fit.minZoom,
+      maxZoom: Math.min(fit.maxZoom, Math.max(0.82, initialZoom)),
+      duration: reduceMotion ? 0 : 420
+    })
+  }, [fitView, getNodes, initialZoom, reduceMotion])
+
+  useLayoutTransition(
+    snapshot?.positions,
+    duration > 0 && initialCameraDone,
+    duration,
+    shellRef,
+    layoutTransitionRef,
+    onTransitionEnd
+  )
+
+  // When motion is reduced, skip animation but still fit view after layout change.
+  useEffect(() => {
+    if (!initialCameraDone || duration > 0 || !pendingFitRef.current) return
+    const id = requestAnimationFrame(() => onTransitionEnd())
+    return () => cancelAnimationFrame(id)
+  }, [snapshot?.positions, layoutMode, architectureMode, duration, initialCameraDone, onTransitionEnd])
 
   return null
 }
 
 function FocusCameraController() {
-  const { setCenter, getNode } = useReactFlow()
+  const { setCenter, getNode, getViewport } = useReactFlow()
   const focusedNodeId = useGraphStore((s) => s.focusedNodeId)
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId)
   const initialCameraDone = useGraphStore((s) => s.initialCameraDone)
@@ -150,29 +166,15 @@ function FocusCameraController() {
       (node.data as { isEntry?: boolean })?.isEntry ? FLOW_ENTRY_HEIGHT : FLOW_NODE_HEIGHT
 
     const t = setTimeout(() => {
+      const { zoom } = getViewport()
       void setCenter(node.position.x + FLOW_NODE_WIDTH / 2, node.position.y + h / 2, {
-        zoom: 1.02,
-        duration: 550
+        zoom,
+        duration: 450
       })
     }, 40)
     return () => clearTimeout(t)
-  }, [focusedNodeId, selectedNodeId, initialCameraDone, getNode, setCenter])
+  }, [focusedNodeId, selectedNodeId, initialCameraDone, getNode, setCenter, getViewport])
 
-  return null
-}
-
-function LayoutTransitionController({
-  shellRef,
-  layoutTransitionRef
-}: {
-  shellRef: React.RefObject<HTMLDivElement | null>
-  layoutTransitionRef: React.MutableRefObject<boolean>
-}) {
-  const snapshot = useGraphStore((s) => s.snapshot)
-  const reduceMotion = useSettingsStore((s) => s.reduceMotion)
-  const layoutAnimationDuration = useSettingsStore((s) => s.layoutAnimationDuration)
-  const duration = reduceMotion ? 0 : Math.min(layoutAnimationDuration, 520)
-  useLayoutTransition(snapshot?.positions, duration > 0, duration, shellRef, layoutTransitionRef)
   return null
 }
 
@@ -225,6 +227,7 @@ export function GraphCanvas() {
   const flowCountsRef = useRef({ nodes: 0, edges: 0 })
   const isZoomingRef = useRef(false)
   const layoutTransitionRef = useRef(false)
+  const graphInteractTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(
     () => () => {
@@ -415,10 +418,21 @@ export function GraphCanvas() {
     })
   }, [flowNodes, flowEdges])
 
+  const markGraphInteracting = useCallback(() => {
+    const shell = shellRef.current
+    if (!shell) return
+    shell.classList.add('is-graph-interacting')
+    if (graphInteractTimerRef.current) clearTimeout(graphInteractTimerRef.current)
+    graphInteractTimerRef.current = setTimeout(() => {
+      shell.classList.remove('is-graph-interacting')
+    }, 340)
+  }, [])
+
   const markViewportMoving = useCallback(() => {
     const shell = shellRef.current
     if (!shell) return
     isZoomingRef.current = true
+    markGraphInteracting()
     if (!shell.classList.contains('is-zooming')) {
       shell.classList.add('is-zooming')
       debugArchRender('zoom-start')
@@ -434,7 +448,7 @@ export function GraphCanvas() {
       shell.classList.remove('is-zooming')
       debugArchRender('zoom-end')
     }, 280)
-  }, [])
+  }, [markGraphInteracting])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(flowNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(flowEdges)
@@ -488,13 +502,15 @@ export function GraphCanvas() {
       setSelectedNodeId(node.id)
       setFocusedNodeId(node.id)
       setInspectorOpen(true)
+      markGraphInteracting()
     },
     [
       selectedNodeId,
       toggleFolderExpand,
       setSelectedNodeId,
       setFocusedNodeId,
-      setInspectorOpen
+      setInspectorOpen,
+      markGraphInteracting
     ]
   )
 
@@ -765,7 +781,6 @@ export function GraphCanvas() {
         className="bg-transparent"
       >
         <InitialViewportController />
-        <LayoutViewportController />
         <LayoutTransitionController shellRef={shellRef} layoutTransitionRef={layoutTransitionRef} />
         <FocusCameraController />
         <GraphMinimap />
@@ -773,6 +788,7 @@ export function GraphCanvas() {
 
       <ArchitectureGraphLegend nodes={snapshot.nodes} />
       <HierarchyLabels hidden={!initialCameraDone} />
+      <PyramidLabels hidden={!initialCameraDone} />
 
       <NodeInspector />
       <RingInspector />

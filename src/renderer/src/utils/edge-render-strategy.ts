@@ -151,6 +151,7 @@ export function computeEdgeRenderStyle(
   let strokeWidth = base.strokeWidth
   let variant = baseVariant
   let zIndex = state.edgeType === 'contains' ? 0 : 1
+  let stroke = base.stroke
 
   if (state.isUnrelatedDuringSelection) {
     opacity = state.edgeType === 'contains' ? 0.06 : 0.1
@@ -186,7 +187,7 @@ export function computeEdgeRenderStyle(
 
   return {
     variant,
-    stroke: BASE_STYLES[variant].stroke,
+    stroke: variant === 'highlighted' || variant === 'selected' ? BASE_STYLES[variant].stroke : stroke,
     strokeWidth,
     opacity,
     dashed: base.dashed,
@@ -214,6 +215,6 @@ export function styleForGraphEdgeWithFocus(
     nodeWidth,
     nodeHeight
   )
-  const styled = computeEdgeRenderStyle(state)
+  const styled = computeEdgeRenderStyle(state, state.variant)
   return styled
 }

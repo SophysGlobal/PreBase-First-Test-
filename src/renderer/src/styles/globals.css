@@ -207,12 +207,23 @@ a,
   visibility: hidden !important;
 }
 
-/* While zooming/panning: hide overlays; keep edges visible with lighter paint. */
+/* Legend overlay — fixed viewport UI; dims during interaction, never hidden. */
+.graph-legend-overlay {
+  opacity: 1;
+  filter: brightness(1);
+  transition: opacity 0.22s ease, filter 0.22s ease;
+}
+
+/* While zooming/panning: dim overlays; keep edges visible with lighter paint. */
 .graph-viewport-shell.is-zooming .hierarchy-labels-layer,
-.graph-viewport-shell.is-layout-transitioning .hierarchy-labels-layer {
-  visibility: hidden;
-  opacity: 0;
+.graph-viewport-shell.is-layout-transitioning .hierarchy-labels-layer,
+.graph-viewport-shell.is-graph-interacting .hierarchy-labels-layer,
+.graph-viewport-shell.is-zooming .pyramid-labels-layer,
+.graph-viewport-shell.is-layout-transitioning .pyramid-labels-layer,
+.graph-viewport-shell.is-graph-interacting .pyramid-labels-layer {
+  opacity: 0.35;
   pointer-events: none;
+  transition: opacity 0.2s ease;
 }
 
 .graph-viewport-shell.is-zooming .react-flow__minimap,
@@ -222,11 +233,14 @@ a,
   pointer-events: none;
 }
 
+/* Legend dims smoothly during interaction — never hidden. */
 .graph-viewport-shell.is-zooming .graph-legend-overlay,
-.graph-viewport-shell.is-layout-transitioning .graph-legend-overlay {
-  visibility: hidden;
-  opacity: 0;
+.graph-viewport-shell.is-layout-transitioning .graph-legend-overlay,
+.graph-viewport-shell.is-graph-interacting .graph-legend-overlay {
+  opacity: var(--legend-dim-opacity, 0.58);
+  filter: brightness(0.86);
   pointer-events: none;
+  transition: opacity 0.22s ease, filter 0.22s ease;
 }
 
 /* Simplified edge paint during zoom — stay visible, drop expensive markers/glow. */

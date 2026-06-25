@@ -1,6 +1,11 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { LayoutMode } from '../../../core/types'
+import {
+  DEFAULT_VISIBLE_EDGE_CATEGORIES,
+  toggleVisibleEdgeCategory,
+  type GraphEdgeCategory
+} from '../utils/edge-categories'
 
 export type ThemePreference = 'light' | 'dark' | 'system'
 export type ResolvedTheme = 'light' | 'dark'
@@ -66,6 +71,12 @@ export interface AppSettings {
   networkEdgeOpacity: number
   /** Network graph empty-space rotation direction. */
   networkDragDirection: 'natural' | 'inverted'
+  /** Up to 2 edge relationship categories visible on graphs. */
+  visibleEdgeCategories: GraphEdgeCategory[]
+  /** When true, long sidebar sections start collapsed. */
+  collapseSidebarSectionsDefault: boolean
+  /** Legend opacity reduction during graph interaction (0–80). */
+  legendInteractionDimAmount: number
 }
 
 interface SettingsStore extends AppSettings {
@@ -111,6 +122,10 @@ interface SettingsStore extends AppSettings {
   setNetworkPhysicsStrength: (value: number) => void
   setNetworkEdgeOpacity: (value: number) => void
   setNetworkDragDirection: (value: 'natural' | 'inverted') => void
+  setVisibleEdgeCategories: (categories: GraphEdgeCategory[]) => void
+  toggleVisibleEdgeCategory: (category: GraphEdgeCategory) => void
+  setCollapseSidebarSectionsDefault: (on: boolean) => void
+  setLegendInteractionDimAmount: (value: number) => void
   resetSettings: () => void
 }
 
@@ -156,7 +171,10 @@ const defaults: AppSettings = {
   networkLodNodeThreshold: 900,
   networkPhysicsStrength: 1,
   networkEdgeOpacity: 0.55,
-  networkDragDirection: 'natural'
+  networkDragDirection: 'natural',
+  visibleEdgeCategories: [...DEFAULT_VISIBLE_EDGE_CATEGORIES],
+  collapseSidebarSectionsDefault: true,
+  legendInteractionDimAmount: 40
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -210,10 +228,19 @@ export const useSettingsStore = create<SettingsStore>()(
       setNetworkPhysicsStrength: (networkPhysicsStrength) => set({ networkPhysicsStrength }),
       setNetworkEdgeOpacity: (networkEdgeOpacity) => set({ networkEdgeOpacity }),
       setNetworkDragDirection: (networkDragDirection) => set({ networkDragDirection }),
+      setVisibleEdgeCategories: (visibleEdgeCategories) => set({ visibleEdgeCategories }),
+      toggleVisibleEdgeCategory: (category) =>
+        set((s) => ({
+          visibleEdgeCategories: toggleVisibleEdgeCategory(s.visibleEdgeCategories, category)
+        })),
+      setCollapseSidebarSectionsDefault: (collapseSidebarSectionsDefault) =>
+        set({ collapseSidebarSectionsDefault }),
+      setLegendInteractionDimAmount: (legendInteractionDimAmount) =>
+        set({ legendInteractionDimAmount: Math.max(0, Math.min(80, legendInteractionDimAmount)) }),
       resetSettings: () => set({ ...defaults })
     }),
     {
-      name: 'prebase-settings-v8',
+      name: 'prebase-settings-v10',
       migrate: (persisted) => {
         const state = { ...defaults, ...(persisted as Partial<AppSettings>) }
         // P0 fix: edge simplification hid all import edges for many users
@@ -273,7 +300,23 @@ export const useSettingsStore = create<SettingsStore>()(
         if (state.networkPhysicsStrength === undefined) state.networkPhysicsStrength = 1
         if (state.networkEdgeOpacity === undefined) state.networkEdgeOpacity = 0.55
         if (state.networkDragDirection === undefined) state.networkDragDirection = 'natural'
+        if (!Array.isArray(state.visibleEdgeCategories) || state.visibleEdgeCategories.length === 0) {
+          state.visibleEdgeCategories = [...DEFAULT_VISIBLE_EDGE_CATEGORIES]
+        } else if (state.visibleEdgeCategories.length > 2) {
+          state.visibleEdgeCategories = state.visibleEdgeCategories.slice(0, 2)
+        }
         if (state.layoutSpacing === undefined) state.layoutSpacing = 'balanced'
+        if (state.collapseSidebarSectionsDefault === undefined) {
+          state.collapseSidebarSectionsDefault = true
+        }
+        if (state.legendInteractionDimAmount === undefined) {
+          state.legendInteractionDimAmount = 40
+        } else {
+          state.legendInteractionDimAmount = Math.max(
+            0,
+            Math.min(80, state.legendInteractionDimAmount)
+          )
+        }
         return state
       }
     }

@@ -1,13 +1,18 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Sparkles, X } from 'lucide-react'
+import { useGraphViewportInsets } from '../../features/graph-shared/useGraphViewportInsets'
 
 export function AiChatBubble() {
   const [expanded, setExpanded] = useState(false)
   const [input, setInput] = useState('')
+  const { magnusRightPx } = useGraphViewportInsets()
 
   return (
-    <div className="absolute bottom-6 right-6 z-30 flex flex-col items-end gap-2 titlebar-no-drag">
+    <div
+      className="absolute bottom-6 z-30 flex flex-col items-end gap-2 titlebar-no-drag transition-[right] duration-200"
+      style={{ right: magnusRightPx }}
+    >
       <AnimatePresence>
         {expanded && (
           <motion.div

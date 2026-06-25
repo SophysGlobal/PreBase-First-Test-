@@ -47,6 +47,26 @@ export function debugTilePressure(context: string, data: Record<string, unknown>
   })
 }
 
+export function debugNetworkEdge(data: Record<string, unknown>): void {
+  if (typeof window === 'undefined') return
+  if (import.meta.env.DEV) {
+    console.debug('[NetworkEdge]', data)
+    return
+  }
+  if (window.localStorage.getItem('prebase:graph-debug') !== '1') return
+  console.debug('[NetworkEdge]', data)
+}
+
+export function debugNetworkLayout(data: Record<string, unknown>): void {
+  if (typeof window === 'undefined') return
+  if (import.meta.env.DEV) {
+    console.debug('[NetworkLayout]', data)
+    return
+  }
+  if (window.localStorage.getItem('prebase:graph-debug') !== '1') return
+  console.debug('[NetworkLayout]', data)
+}
+
 export function debugGraphBounds(
   label: string,
   positions: Array<{ x: number; y: number }>

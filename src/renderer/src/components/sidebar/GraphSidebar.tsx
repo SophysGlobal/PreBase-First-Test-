@@ -19,6 +19,7 @@ import {
 } from '../../state/graph-store'
 import { GraphLayersPanel } from './GraphLayersPanel'
 import { NetworkGraphSidebarPanel } from './NetworkGraphSidebarPanel'
+import { CollapsibleSidebarSection } from './CollapsibleSidebarSection'
 import { ARCHITECTURE_MODES } from '../../utils/architecture-modes'
 import { InfoTooltip } from '../ui/InfoTooltip'
 import { CollapsibleSidebar } from '../layout/CollapsibleSidebar'
@@ -147,15 +148,11 @@ function GraphControls({ onRelayout }: GraphSidebarProps) {
         {snapshot && !isOverview && <GraphSearchPanel nodes={snapshot.nodes} />}
 
         {showStructureControls && (
-          <div>
-            <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1 px-0.5 flex items-center gap-1">
-              Organization
-              <InfoTooltip
-                title={GRAPH_ORG_MODE_HELP.dependencies.title}
-                body={`${GRAPH_ORG_MODE_HELP.dependencies.body} ${GRAPH_ORG_MODE_HELP.tree.body}`}
-                side="bottom"
-              />
-            </p>
+          <CollapsibleSidebarSection
+            sectionId="graph-organization"
+            title="Organization"
+            hint={`${GRAPH_ORG_MODE_HELP.dependencies.body} ${GRAPH_ORG_MODE_HELP.tree.body}`}
+          >
             <div className="flex gap-0.5 p-0.5 bg-surface-overlay rounded-lg border border-border-subtle">
               {orgModes.map(({ id, label, icon: Icon }) => (
                 <button
@@ -173,7 +170,7 @@ function GraphControls({ onRelayout }: GraphSidebarProps) {
                 </button>
               ))}
             </div>
-          </div>
+          </CollapsibleSidebarSection>
         )}
 
         {!isOverview && (
@@ -206,11 +203,7 @@ function GraphControls({ onRelayout }: GraphSidebarProps) {
         )}
 
         {showStructureControls && (
-        <div>
-          <p className="text-[10px] uppercase tracking-wider text-text-muted mb-1 px-0.5 flex items-center gap-1">
-            Depth
-            <InfoTooltip title={DEPTH_HELP.title} body={DEPTH_HELP.body} side="bottom" />
-          </p>
+        <CollapsibleSidebarSection sectionId="graph-depth" title="Depth" hint={DEPTH_HELP.body}>
           <div className="flex gap-1">
             {[1, 2, 3, -1].map((d) => (
               <button
@@ -227,15 +220,12 @@ function GraphControls({ onRelayout }: GraphSidebarProps) {
               </button>
             ))}
           </div>
-        </div>
+        </CollapsibleSidebarSection>
         )}
 
         {showArchLayout && (
-          <div className="border border-border-subtle rounded-lg overflow-hidden">
-            <p className="px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-text-muted">
-              Layout
-            </p>
-            <div className="px-2 pb-2 space-y-2">
+          <CollapsibleSidebarSection sectionId="graph-layout" title="Layout">
+            <div className="space-y-2">
                 <div className="space-y-0.5">
                   {LAYOUT_PRESETS.map((mode) => (
                     <div key={mode} className="flex items-center gap-0.5">
@@ -263,10 +253,7 @@ function GraphControls({ onRelayout }: GraphSidebarProps) {
                   ))}
                 </div>
                 {showLayoutOrganization && (
-                  <div className="space-y-1 pt-1 border-t border-border-subtle/60">
-                    <p className="text-[10px] uppercase tracking-wider text-text-muted px-0.5">
-                      Organization method
-                    </p>
+                  <CollapsibleSidebarSection sectionId="graph-org-method" title="Organization method" className="border-0 rounded-none !overflow-visible">
                     <div className="space-y-0.5">
                       {ORGANIZATION_METHOD_OPTIONS.map((opt) => (
                         <div key={opt.id} className="flex items-center gap-0.5">
@@ -288,7 +275,7 @@ function GraphControls({ onRelayout }: GraphSidebarProps) {
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </CollapsibleSidebarSection>
                 )}
                 <div className="space-y-1 pt-1 border-t border-border-subtle/60">
                   <p className="text-[10px] uppercase tracking-wider text-text-muted px-0.5">
@@ -320,8 +307,8 @@ function GraphControls({ onRelayout }: GraphSidebarProps) {
                     ))}
                   </div>
                 </div>
-              </div>
-          </div>
+            </div>
+          </CollapsibleSidebarSection>
         )}
 
         <div className="space-y-1 pt-0.5 border-t border-border-subtle">
