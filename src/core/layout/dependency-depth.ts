@@ -1,12 +1,24 @@
 import type { GraphEdge, GraphNode } from '../types'
 
+/** Sentinel depth for files not reachable from the entry via import edges. */
+export const UNREACHABLE_DEPTH = 10_000
+
+export function isUnreachableDepth(depth: number): boolean {
+  return depth >= UNREACHABLE_DEPTH
+}
+
 export interface DependencyDepthResult {
   depth: Map<string, number>
   layers: Map<number, string[]>
   entryNodeId: string
+  maxReachableDepth: number
 }
 
-export function computeDependencyDepths(
+/**
+ * Shortest-path depth from entry over import relationships (undirected).
+ * Shared by Hierarchy rings and Pyramid layers.
+ */
+export function computeEntryPointDepthGroups(
   nodes: GraphNode[],
   edges: GraphEdge[],
   entryNodeId: string
@@ -17,13 +29,11 @@ export function computeDependencyDepths(
     (e) => e.kind === 'import' && nodeIds.has(e.source) && nodeIds.has(e.target)
   )
 
-  const outbound = new Map<string, string[]>()
-  const inbound = new Map<string, string[]>()
+  const adj = new Map<string, string[]>()
+  for (const id of nodeIds) adj.set(id, [])
   for (const e of importEdges) {
-    if (!outbound.has(e.source)) outbound.set(e.source, [])
-    outbound.get(e.source)!.push(e.target)
-    if (!inbound.has(e.target)) inbound.set(e.target, [])
-    inbound.get(e.target)!.push(e.source)
+    adj.get(e.source)!.push(e.target)
+    adj.get(e.target)!.push(e.source)
   }
 
   const depth = new Map<string, number>()
@@ -37,7 +47,7 @@ export function computeDependencyDepths(
   while (queue.length > 0) {
     const current = queue.shift()!
     const d = depth.get(current)!
-    for (const next of outbound.get(current) ?? []) {
+    for (const next of adj.get(current) ?? []) {
       if (!depth.has(next)) {
         depth.set(next, d + 1)
         queue.push(next)
@@ -45,10 +55,12 @@ export function computeDependencyDepths(
     }
   }
 
-  const maxBfsDepth = depth.size > 0 ? Math.max(...depth.values()) : 0
+  const reachableDepths = [...depth.values()]
+  const maxReachableDepth = reachableDepths.length > 0 ? Math.max(...reachableDepths) : 0
+
   for (const node of layoutNodes) {
     if (!depth.has(node.id)) {
-      depth.set(node.id, maxBfsDepth + 1 + Math.min(inbound.get(node.id)?.length ?? 0, 2))
+      depth.set(node.id, UNREACHABLE_DEPTH)
     }
   }
 
@@ -59,7 +71,16 @@ export function computeDependencyDepths(
     layers.get(d)!.push(node.id)
   }
 
-  return { depth, layers, entryNodeId }
+  return { depth, layers, entryNodeId, maxReachableDepth }
+}
+
+/** Alias for computeEntryPointDepthGroups. */
+export function computeDependencyDepths(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  entryNodeId: string
+): DependencyDepthResult {
+  return computeEntryPointDepthGroups(nodes, edges, entryNodeId)
 }
 
 export function chunkArray<T>(items: T[], size: number): T[][] {

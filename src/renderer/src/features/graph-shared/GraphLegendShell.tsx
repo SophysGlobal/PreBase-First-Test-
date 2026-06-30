@@ -1,15 +1,13 @@
 import type { ReactNode } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 
-/** Vertical floating legend — expands upward, collapses downward toward zoom controls. */
+/** Floating legend card with integrated header (no separate title pill). */
 export function GraphLegendShell({
-  title,
   collapsed,
   onToggle,
   className,
   children
 }: {
-  title: string
   collapsed: boolean
   onToggle: () => void
   className?: string
@@ -17,22 +15,28 @@ export function GraphLegendShell({
 }) {
   return (
     <div
-      className={`pointer-events-auto flex flex-col-reverse items-start gap-1.5 ${className ?? ''}`}
+      className={`pointer-events-auto ${className ?? ''}`}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      {!collapsed && (
-        <div className="rounded-xl border border-border-subtle bg-[#141518]/96 shadow-[0_4px_24px_rgba(0,0,0,0.4)] p-2.5 w-[min(100vw-5rem,240px)] max-h-[min(42vh,300px)] overflow-y-auto sidebar-scroll">
-          <div className="grid grid-cols-1 gap-1">{children}</div>
-        </div>
-      )}
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border-subtle bg-[#141518]/95 shadow-[0_4px_16px_rgba(0,0,0,0.35)] text-[10px] uppercase tracking-wider text-text-muted hover:text-text-secondary transition-colors"
-      >
-        {title}
-        {collapsed ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
-      </button>
+      <div className="rounded-xl border border-border-subtle bg-[#141518] shadow-[0_4px_24px_rgba(0,0,0,0.5)] w-fit min-w-[168px] max-w-[min(100vw-5rem,240px)] overflow-hidden inline-flex flex-col">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="w-full flex items-center justify-between px-2.5 py-1.5 border-b border-border-subtle/80 text-left hover:bg-surface-muted/40 transition-colors"
+        >
+          <span className="text-[11px] font-medium text-text-secondary">Legend</span>
+          {collapsed ? (
+            <ChevronDown className="w-3.5 h-3.5 text-text-muted" />
+          ) : (
+            <ChevronUp className="w-3.5 h-3.5 text-text-muted" />
+          )}
+        </button>
+        {!collapsed && children ? (
+          <div className="px-2 py-1.5 overflow-y-auto sidebar-scroll max-h-[min(36vh,260px)]">
+            <div className="flex flex-col gap-0">{children}</div>
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -63,7 +67,7 @@ export function LegendChip({
 
 export function LegendSectionLabel({ children }: { children: ReactNode }) {
   return (
-    <p className="text-[9px] uppercase tracking-wider text-text-muted px-1 pt-1 pb-0.5 border-t border-border-subtle/50 first:border-t-0 first:pt-0">
+    <p className="text-[9px] uppercase tracking-wider text-text-muted px-1 pt-1 pb-0 first:pt-0 first:border-t-0 border-t border-border-subtle/40">
       {children}
     </p>
   )

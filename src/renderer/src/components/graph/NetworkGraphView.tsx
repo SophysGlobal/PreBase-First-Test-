@@ -19,6 +19,7 @@ import { pickNetworkNodeAtScreenPoint } from '../../utils/network-picking'
 import { buildNetworkModel, type NetworkLink, type NetworkNode } from '../../utils/network-model'
 import type { FlowAdapterOptions } from '../../utils/flow-adapter'
 import { GraphZoomControls } from '../../features/graph-shared/GraphZoomControls'
+import { useGraphViewportInsets } from '../../features/graph-shared/useGraphViewportInsets'
 import { NetworkGraphLegend } from '../../features/network-graph/NetworkGraphLegend'
 import { buildPositionedNetworkGraph } from '../../features/network-graph/network-layout-engine'
 import {
@@ -29,8 +30,8 @@ import {
   type GraphEdgeCategory
 } from '../../utils/edge-categories'
 import { debugNetworkLayout, debugNetworkEdge } from '../../utils/graph-debug'
-import { NodeInspector } from '../inspector/NodeInspector'
 import { AiChatBubble } from '../ai/AiChatBubble'
+import { GraphItemPopup, type PopupAnchor } from './GraphItemPopup'
 
 const SELECTED_COLOR = '#2dd4bf'
 const SELECTED_GLOW = 'rgba(45,212,191,0.5)'
@@ -70,14 +71,18 @@ export function NetworkGraphView() {
   const setSelectedNodeId = useGraphStore((s) => s.setSelectedNodeId)
   const setFocusedNodeId = useGraphStore((s) => s.setFocusedNodeId)
 
+  const [networkPopupAnchor, setNetworkPopupAnchor] = useState<PopupAnchor | null>(null)
+
   const maxRenderedNodes = useSettingsStore((s) => s.maxRenderedNodes)
   const visibleRelatedConnections = useSettingsStore((s) => s.visibleRelatedConnections)
   const reduceMotion = useSettingsStore((s) => s.reduceMotion)
   const nodeDragDelayMs = useSettingsStore((s) => s.nodeDragDelayMs)
   const networkDragDirection = useSettingsStore((s) => s.networkDragDirection)
+  const networkIdleAutoRotate = useSettingsStore((s) => s.networkIdleAutoRotate)
   const lodThreshold = useSettingsStore((s) => s.networkLodNodeThreshold)
   const edgeOpacity = useSettingsStore((s) => s.networkEdgeOpacity)
   const visibleEdgeCategories = useSettingsStore((s) => s.visibleEdgeCategories)
+  const { rightInset } = useGraphViewportInsets()
 
   const containerRef = useRef<HTMLDivElement>(null)
   const fgRef = useRef<ForceGraphMethods<SimNode, SimLink> | undefined>(undefined)
@@ -106,9 +111,15 @@ export function NetworkGraphView() {
   const liveCanvasRedrawRef = useRef(false)
   liveCanvasRedrawRef.current = liveCanvasRedraw
 
-  const orbit = useNetworkOrbit(reduceMotion)
+  const orbit = useNetworkOrbit(reduceMotion, networkIdleAutoRotate)
   const orbitResetRef = useRef(orbit.reset)
+  const markOrbitInteractionRef = useRef(orbit.markInteraction)
+  const setSelectionPausedRef = useRef(orbit.setSelectionPaused)
+  const notifyLayoutReadyRef = useRef(orbit.notifyLayoutReady)
   orbitResetRef.current = orbit.reset
+  markOrbitInteractionRef.current = orbit.markInteraction
+  setSelectionPausedRef.current = orbit.setSelectionPaused
+  notifyLayoutReadyRef.current = orbit.notifyLayoutReady
 
   // ── Refs that the render loop reads (no per-frame React state) ───────────
   const zoomRef = useRef(1)
@@ -307,6 +318,8 @@ export function NetworkGraphView() {
       setLayoutReady(true)
       setLayoutError(null)
       setAnimating(true)
+      notifyLayoutReadyRef.current()
+      wakeRafRef.current()
       fgRef.current?.resumeAnimation()
 
       debugNetworkLayout({
@@ -367,14 +380,18 @@ export function NetworkGraphView() {
       }
       const w = Math.max(1, bbox.x[1] - bbox.x[0])
       const h = Math.max(1, bbox.y[1] - bbox.y[0])
-      const pad = 96
-      const zx = (dims.width - pad) / w
-      const zy = (dims.height - pad) / h
-      const z = Math.max(0.6, Math.min(1.4, Math.min(zx, zy)))
-      g.centerAt((bbox.x[0] + bbox.x[1]) / 2, (bbox.y[0] + bbox.y[1]) / 2, durationMs)
+      const pad = 72
+      const usableW = Math.max(200, dims.width - rightInset - pad * 2)
+      const usableH = Math.max(200, dims.height - pad * 2)
+      const z = Math.max(0.6, Math.min(1.4, Math.min(usableW / w, usableH / h)))
+      const cx = (bbox.x[0] + bbox.x[1]) / 2
+      const cy = (bbox.y[0] + bbox.y[1]) / 2
+      // Shift camera so bbox center sits in the middle of the visible canvas (excluding inspector).
+      const panBias = rightInset / (2 * Math.max(z, 0.01))
+      g.centerAt(cx + panBias, cy, durationMs)
       g.zoom(z, durationMs)
     },
-    [dims.width, dims.height]
+    [dims.width, dims.height, rightInset]
   )
   const fitViewRef = useRef(fitView)
   fitViewRef.current = fitView
@@ -437,6 +454,17 @@ export function NetworkGraphView() {
   ])
 
   useEffect(() => {
+    setSelectionPausedRef.current(!!selectedNodeId)
+  }, [selectedNodeId])
+
+  useEffect(() => {
+    if (layoutReady && frozenRef.current) {
+      notifyLayoutReadyRef.current()
+      wakeRafRef.current()
+    }
+  }, [layoutReady])
+
+  useEffect(() => {
     if (!layoutReady || !model.nodes.length) return
     const t = setTimeout(() => fitViewRef.current(), 80)
     return () => clearTimeout(t)
@@ -445,6 +473,7 @@ export function NetworkGraphView() {
   // Explicit "Reset view" request from the sidebar → re-fit camera + rotation.
   useEffect(() => {
     if (resetViewNonce === 0) return
+    markOrbitInteractionRef.current()
     orbit.reset()
     applyNetworkLayoutRef.current()
     applyRotationRef.current(IDENTITY_ORIENTATION)
@@ -520,17 +549,21 @@ export function NetworkGraphView() {
 
   const handleNetworkTap = useCallback(
     (clientX: number, clientY: number) => {
+      markOrbitInteractionRef.current()
       const nodeId = pickNodeIdAtRef.current(clientX, clientY)
       if (nodeId) {
         if (selectedRef.current === nodeId) {
           setSelectedNodeId(null)
           setFocusedNodeId(null)
+          setNetworkPopupAnchor(null)
         } else {
           selectNodeInGraph(nodeId)
+          setNetworkPopupAnchor({ x: clientX, y: clientY })
         }
       } else {
         setSelectedNodeId(null)
         setFocusedNodeId(null)
+        setNetworkPopupAnchor(null)
       }
       setAnimating(true)
       wakeRafRef.current()
@@ -548,6 +581,7 @@ export function NetworkGraphView() {
       },
       onDragStart: () => {
         rotatingRef.current = true
+        markOrbitInteractionRef.current()
         setAnimating(true)
         wakeRafRef.current()
       },
@@ -572,12 +606,16 @@ export function NetworkGraphView() {
   // Stops when idle to avoid burning CPU/GPU after prolonged inactivity.
   useEffect(() => {
     let raf = 0
-    const loop = () => {
+    let lastTs = performance.now()
+    const loop = (ts: number) => {
+      const deltaSec = Math.min(0.05, Math.max(0, (ts - lastTs) / 1000))
+      lastTs = ts
+
       let needsRedraw = false
       const dragging = orbit.isDragging()
 
       if (!dragging) {
-        const step = orbit.step()
+        const step = orbit.step(deltaSec)
         if (step.moving) needsRedraw = true
       } else {
         needsRedraw = true
@@ -621,7 +659,14 @@ export function NetworkGraphView() {
         setAnimating(false)
       }
 
-      const active = needsRedraw || dragging || settling || hoverAnimating || rotatingRef.current
+      const active =
+        needsRedraw ||
+        dragging ||
+        settling ||
+        hoverAnimating ||
+        rotatingRef.current ||
+        (networkIdleAutoRotate && !reduceMotion && layoutReady && frozenRef.current)
+
       if (active) {
         raf = requestAnimationFrame(loop)
       } else {
@@ -633,11 +678,15 @@ export function NetworkGraphView() {
       if (!raf) raf = requestAnimationFrame(loop)
     }
 
+    if (layoutReady && networkIdleAutoRotate && !reduceMotion) {
+      wakeRafRef.current()
+    }
+
     return () => {
       wakeRafRef.current = () => {}
       if (raf) cancelAnimationFrame(raf)
     }
-  }, [orbit, setAnimating])
+  }, [orbit, setAnimating, networkIdleAutoRotate, reduceMotion, layoutReady])
 
   const clearHoverTimer = useCallback(() => {
     if (hoverTimerRef.current) {
@@ -916,12 +965,16 @@ export function NetworkGraphView() {
         d3VelocityDecay={1}
         onZoom={(transform) => {
           zoomRef.current = transform.k
+          markOrbitInteractionRef.current()
+          setAnimating(true)
+          wakeRafRef.current()
         }}
       />
 
       {graphReady && (
         <GraphZoomControls
           onZoomIn={() => {
+            markOrbitInteractionRef.current()
             const g = fgRef.current
             if (!g) return
             const k = g.zoom()
@@ -929,19 +982,30 @@ export function NetworkGraphView() {
             setAnimating(true)
           }}
           onZoomOut={() => {
+            markOrbitInteractionRef.current()
             const g = fgRef.current
             if (!g) return
             const k = g.zoom()
             g.zoom(k / 1.25, 200)
             setAnimating(true)
           }}
-          onFitView={() => fitViewRef.current(400)}
+          onFitView={() => {
+            markOrbitInteractionRef.current()
+            fitViewRef.current(400)
+          }}
           onResetView={() => useNetworkControls.getState().requestResetView()}
         />
       )}
 
       <NetworkGraphLegend nodes={snapshot.nodes} />
-      <NodeInspector />
+      <GraphItemPopup
+        anchor={networkPopupAnchor}
+        onClose={() => {
+          setNetworkPopupAnchor(null)
+          setSelectedNodeId(null)
+          setFocusedNodeId(null)
+        }}
+      />
       <AiChatBubble />
 
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 px-4 py-2 rounded-full bg-[#141518] border border-border-subtle text-xs text-text-secondary pointer-events-none max-w-[90vw] flex-wrap justify-center">

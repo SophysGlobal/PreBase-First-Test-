@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   IDENTITY_ORIENTATION,
   mapScreenDragToArcball,
@@ -14,6 +14,10 @@ const STOP_EPSILON = 0.0001
 const ROT_SENSITIVITY = 1
 /** Pixels of movement before a gesture counts as drag/rotation (not click). */
 const DRAG_THRESHOLD = 5
+/** Yaw speed when idle (radians per second) — ~0.09 rad/s ≈ 70s per revolution. */
+const IDLE_YAW_RAD_PER_SEC = 0.09
+const IDLE_RESUME_MS = 1600
+const IDLE_START_DELAY_MS = 900
 
 export type NetworkDragDirection = 'natural' | 'inverted'
 
@@ -33,7 +37,7 @@ export interface OrbitStep {
   lastAngular: { ax: number; ay: number; az: number; angle: number }
 }
 
-export function useNetworkOrbit(reduceMotion: boolean) {
+export function useNetworkOrbit(reduceMotion: boolean, idleAutoRotate = true) {
   const orientationRef = useRef<Orientation3D>({ ...IDENTITY_ORIENTATION })
   const angularVelRef = useRef({ ax: 0, ay: 0, az: 0, angle: 0 })
   const lastAngularRef = useRef({ ax: 0, ay: 0, az: 0, angle: 0 })
@@ -47,6 +51,71 @@ export function useNetworkOrbit(reduceMotion: boolean) {
   const captureTargetRef = useRef<HTMLElement | null>(null)
   const viewportRef = useRef<DOMRect | null>(null)
   const optionsRef = useRef<OrbitAttachOptions>({})
+  const idleEnabledRef = useRef(idleAutoRotate && !reduceMotion)
+  const idlePausedRef = useRef(true)
+  const selectionPausedRef = useRef(false)
+  const idleResumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    idleEnabledRef.current = idleAutoRotate && !reduceMotion
+    if (!idleEnabledRef.current) idlePausedRef.current = true
+  }, [idleAutoRotate, reduceMotion])
+
+  const clearIdleResumeTimer = useCallback(() => {
+    if (idleResumeTimerRef.current) {
+      clearTimeout(idleResumeTimerRef.current)
+      idleResumeTimerRef.current = null
+    }
+  }, [])
+
+  const scheduleIdleResume = useCallback(() => {
+    idlePausedRef.current = true
+    clearIdleResumeTimer()
+    if (selectionPausedRef.current || !idleEnabledRef.current) return
+    idleResumeTimerRef.current = setTimeout(() => {
+      idleResumeTimerRef.current = null
+      if (idleEnabledRef.current && !draggingRef.current && !selectionPausedRef.current) {
+        idlePausedRef.current = false
+      }
+    }, IDLE_RESUME_MS)
+  }, [clearIdleResumeTimer])
+
+  const markInteraction = useCallback(() => {
+    scheduleIdleResume()
+  }, [scheduleIdleResume])
+
+  const setSelectionPaused = useCallback(
+    (paused: boolean) => {
+      selectionPausedRef.current = paused
+      if (paused) {
+        idlePausedRef.current = true
+        clearIdleResumeTimer()
+        return
+      }
+      scheduleIdleResume()
+    },
+    [clearIdleResumeTimer, scheduleIdleResume]
+  )
+
+  const notifyLayoutReady = useCallback(() => {
+    if (!idleEnabledRef.current || selectionPausedRef.current) return
+    idlePausedRef.current = true
+    clearIdleResumeTimer()
+    idleResumeTimerRef.current = setTimeout(() => {
+      idleResumeTimerRef.current = null
+      if (idleEnabledRef.current && !draggingRef.current && !selectionPausedRef.current) {
+        idlePausedRef.current = false
+      }
+    }, IDLE_START_DELAY_MS)
+  }, [clearIdleResumeTimer])
+
+  useEffect(() => {
+    if (!idleAutoRotate || reduceMotion) {
+      idlePausedRef.current = true
+      return
+    }
+    notifyLayoutReady()
+  }, [idleAutoRotate, reduceMotion, notifyLayoutReady])
 
   const setAttachOptions = useCallback((opts: OrbitAttachOptions) => {
     optionsRef.current = opts
@@ -170,6 +239,7 @@ export function useNetworkOrbit(reduceMotion: boolean) {
         viewportRect()
 
         optionsRef.current.onArm?.()
+        scheduleIdleResume()
 
         try {
           root.setPointerCapture(e.pointerId)
@@ -193,57 +263,79 @@ export function useNetworkOrbit(reduceMotion: boolean) {
         root.removeEventListener('pointerdown', onPointerDown, { capture: true })
       }
     },
-    [emitRotate, releaseCapture]
+    [emitRotate, releaseCapture, scheduleIdleResume]
   )
 
-  const step = useCallback((): OrbitStep => {
-    if (draggingRef.current) {
-      return {
-        orientation: orientationRef.current,
-        moving: true,
-        lastAngular: lastAngularRef.current
+  const step = useCallback(
+    (deltaSec = 1 / 60): OrbitStep => {
+      if (draggingRef.current) {
+        return {
+          orientation: orientationRef.current,
+          moving: true,
+          lastAngular: lastAngularRef.current
+        }
       }
-    }
 
-    const av = angularVelRef.current
-    if (
-      !reduceMotion &&
-      (Math.abs(av.ax) > STOP_EPSILON ||
+      const av = angularVelRef.current
+      const hasMomentum =
+        !reduceMotion &&
+        (Math.abs(av.ax) > STOP_EPSILON ||
+          Math.abs(av.ay) > STOP_EPSILON ||
+          Math.abs(av.az) > STOP_EPSILON ||
+          Math.abs(av.angle) > STOP_EPSILON)
+
+      if (hasMomentum) {
+        const deltaQ = quatFromAxisAngle(av.ax, av.ay, av.az, av.angle)
+        orientationRef.current = quatMultiply(deltaQ, orientationRef.current)
+        emitRotate(orientationRef.current)
+        av.ax *= DAMPING
+        av.ay *= DAMPING
+        av.az *= DAMPING
+        av.angle *= DAMPING
+        if (Math.abs(av.angle) < STOP_EPSILON) {
+          av.ax = 0
+          av.ay = 0
+          av.az = 0
+          av.angle = 0
+        }
+      } else if (av.ax !== 0 || av.ay !== 0 || av.az !== 0 || av.angle !== 0) {
+        angularVelRef.current = { ax: 0, ay: 0, az: 0, angle: 0 }
+        optionsRef.current.onDragEnd?.({ ...lastAngularRef.current })
+      }
+
+      let idleRotating = false
+      const dt = Math.min(0.05, Math.max(0, deltaSec))
+      if (
+        idleEnabledRef.current &&
+        !idlePausedRef.current &&
+        !selectionPausedRef.current &&
+        !hasMomentum &&
+        dt > 0
+      ) {
+        const yaw = IDLE_YAW_RAD_PER_SEC * dt
+        const deltaQ = quatFromAxisAngle(0, 1, 0, yaw)
+        orientationRef.current = quatMultiply(deltaQ, orientationRef.current)
+        emitRotate(orientationRef.current)
+        idleRotating = true
+      }
+
+      const moving =
+        draggingRef.current ||
+        hasMomentum ||
+        idleRotating ||
+        Math.abs(av.ax) > STOP_EPSILON ||
         Math.abs(av.ay) > STOP_EPSILON ||
         Math.abs(av.az) > STOP_EPSILON ||
-        Math.abs(av.angle) > STOP_EPSILON)
-    ) {
-      const deltaQ = quatFromAxisAngle(av.ax, av.ay, av.az, av.angle)
-      orientationRef.current = quatMultiply(deltaQ, orientationRef.current)
-      emitRotate(orientationRef.current)
-      av.ax *= DAMPING
-      av.ay *= DAMPING
-      av.az *= DAMPING
-      av.angle *= DAMPING
-      if (Math.abs(av.angle) < STOP_EPSILON) {
-        av.ax = 0
-        av.ay = 0
-        av.az = 0
-        av.angle = 0
+        Math.abs(av.angle) > STOP_EPSILON
+
+      return {
+        orientation: orientationRef.current,
+        moving,
+        lastAngular: lastAngularRef.current
       }
-    } else if (av.ax !== 0 || av.ay !== 0 || av.az !== 0 || av.angle !== 0) {
-      angularVelRef.current = { ax: 0, ay: 0, az: 0, angle: 0 }
-      optionsRef.current.onDragEnd?.({ ...lastAngularRef.current })
-    }
-
-    const moving =
-      draggingRef.current ||
-      Math.abs(av.ax) > STOP_EPSILON ||
-      Math.abs(av.ay) > STOP_EPSILON ||
-      Math.abs(av.az) > STOP_EPSILON ||
-      Math.abs(av.angle) > STOP_EPSILON
-
-    return {
-      orientation: orientationRef.current,
-      moving,
-      lastAngular: lastAngularRef.current
-    }
-  }, [reduceMotion, emitRotate])
+    },
+    [reduceMotion, emitRotate]
+  )
 
   const isDragging = useCallback(() => draggingRef.current, [])
   const consumedDrag = useCallback(() => {
@@ -261,11 +353,34 @@ export function useNetworkOrbit(reduceMotion: boolean) {
     didRotateRef.current = false
     activePointerIdRef.current = null
     movedRef.current = 0
+    idlePausedRef.current = true
+    clearIdleResumeTimer()
     releaseCapture()
-  }, [releaseCapture])
+    notifyLayoutReady()
+  }, [releaseCapture, clearIdleResumeTimer, notifyLayoutReady])
 
   return useMemo(
-    () => ({ attach, step, setAttachOptions, isDragging, consumedDrag, reset }),
-    [attach, step, setAttachOptions, isDragging, consumedDrag, reset]
+    () => ({
+      attach,
+      step,
+      setAttachOptions,
+      isDragging,
+      consumedDrag,
+      reset,
+      markInteraction,
+      setSelectionPaused,
+      notifyLayoutReady
+    }),
+    [
+      attach,
+      step,
+      setAttachOptions,
+      isDragging,
+      consumedDrag,
+      reset,
+      markInteraction,
+      setSelectionPaused,
+      notifyLayoutReady
+    ]
   )
 }

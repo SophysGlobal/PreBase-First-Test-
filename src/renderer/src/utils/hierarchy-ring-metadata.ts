@@ -1,56 +1,54 @@
-import type { LayoutOrganizationMethod } from '../../../core/layout/layout-organization'
-import { ORGANIZATION_METHOD_OPTIONS } from '../constants/graph-help'
+import { isUnreachableDepth } from '../../../core/layout/dependency-depth'
 
-export function organizationMethodLabel(method: LayoutOrganizationMethod): string {
-  return ORGANIZATION_METHOD_OPTIONS.find((o) => o.id === method)?.label ?? method
-}
-
-export function ringLayerTitle(depth: number, ringIndex: number): string {
-  if (depth === 1 && ringIndex === 0) return 'Layer 1 — Direct dependencies'
-  if (ringIndex > 0) return `Layer ${depth} · Ring ${ringIndex + 1}`
-  return `Layer ${depth}`
-}
-
-export function ringLayerExplanation(
+export function ringLayerTitle(
   depth: number,
   ringIndex: number,
-  method: LayoutOrganizationMethod
+  subRingCount = 1
 ): string {
-  const methodNote = ORGANIZATION_METHOD_OPTIONS.find((o) => o.id === method)?.blurb ?? ''
-
-  if (method === 'dependency-depth') {
-    if (depth === 1) {
-      return 'Files directly imported or referenced by the center/root node. These are your immediate dependencies.'
-    }
-    if (ringIndex > 0) {
-      return `Sub-ring ${ringIndex + 1} at dependency depth ${depth} — extra files at this depth split into readable arcs.`
-    }
-    return `Dependency depth ${depth}: files reached through ${depth} import hop${depth === 1 ? '' : 's'} from the entry point.`
-  }
-
-  if (method === 'import-importance') {
-    if (depth === 1) {
-      return 'Highly imported files ranked closest to the center — hubs and shared modules.'
-    }
+  if (isUnreachableDepth(depth)) {
     return ringIndex > 0
-      ? `Sub-ring at importance tier ${depth} (ring ${ringIndex + 1}).`
-      : `Importance tier ${depth}: less frequently imported files on outer rings. ${methodNote}`
+      ? `Unlinked / Other · overflow ${String.fromCharCode(65 + ringIndex)}`
+      : 'Unlinked / Other'
   }
+  if (depth === 0) return 'Entry / Root'
+  if (ringIndex > 0) {
+    const label = subRingCount > 1 ? String.fromCharCode(65 + ringIndex) : String(ringIndex + 1)
+    return `Depth ${depth}, overflow ring ${label}`
+  }
+  return `Depth ${depth}`
+}
 
-  if (method === 'file-role') {
-    if (depth === 1) {
-      return 'Core architectural roles nearest the entry — routes, shell, and primary UI layers.'
-    }
+export function pyramidLayerTitle(depth: number): string {
+  if (isUnreachableDepth(depth)) return 'Unlinked / Other'
+  if (depth === 0) return 'Entry / Root'
+  return depth === 1 ? 'Depth 1 — Direct connections' : `Depth ${depth}`
+}
+
+export function ringLayerExplanation(depth: number, ringIndex: number): string {
+  if (isUnreachableDepth(depth)) {
     return ringIndex > 0
-      ? `Sub-ring for role tier ${depth} (ring ${ringIndex + 1}).`
-      : `Role tier ${depth}: supporting layers (services, utils, config) farther from center. ${methodNote}`
+      ? 'Overflow ring for files not reachable from the entry point. Same unlinked group; split for readability.'
+      : 'These files are not reachable from the detected entry point through the import relationship graph.'
   }
-
-  // directory-proximity
   if (depth === 1) {
-    return 'Files in or near the entry folder — closest directory proximity to the root.'
+    return 'These files are one relationship step away from the entry file — the shortest path from entry to each file is 1.'
   }
-  return ringIndex > 0
-    ? `Sub-ring at directory tier ${depth} (ring ${ringIndex + 1}).`
-    : `Directory tier ${depth}: files in deeper or more distant folders from the entry path. ${methodNote}`
+  if (ringIndex > 0) {
+    return `This is an additional ring for Depth ${depth} because Depth ${depth} contains too many files to display clearly in one ring. Files here share the same entry-point distance.`
+  }
+  return `These files are ${depth} relationship step${depth === 1 ? '' : 's'} away from the entry file. They are grouped here because the shortest path from the entry file to each file is ${depth}.`
+}
+
+export function pyramidLayerExplanation(depth: number): string {
+  if (isUnreachableDepth(depth)) {
+    return 'These files are not reachable from the detected entry point through the import relationship graph. They appear in the outermost pyramid layer.'
+  }
+  if (depth === 1) {
+    return 'These files are one relationship step away from the entry file. In Pyramid layout, direct connections appear directly below the entry.'
+  }
+  return `These files are ${depth} relationship step${depth === 1 ? '' : 's'} away from the entry file. In Pyramid layout, deeper files appear lower in the graph.`
+}
+
+export function organizationMethodLabel(): string {
+  return 'Entry-point distance (shortest path)'
 }

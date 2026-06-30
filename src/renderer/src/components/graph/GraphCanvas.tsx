@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { pointToRendererPoint } from '@xyflow/system'
 import {
   ReactFlow,
   useNodesState,
   useEdgesState,
   useReactFlow,
+  useStoreApi,
   MarkerType,
   type OnNodesChange,
   type NodeMouseHandler,
@@ -17,20 +19,19 @@ import { ArchitectureOverview } from './ArchitectureOverview'
 import { GraphMinimap } from './GraphMinimap'
 import { HierarchyLabels } from './HierarchyLabels'
 import { PyramidLabels } from './PyramidLabels'
-import { NodeInspector } from '../inspector/NodeInspector'
-import { RingInspector } from '../inspector/RingInspector'
 import { AiChatBubble } from '../ai/AiChatBubble'
+import { GraphItemPopup, type PopupAnchor } from './GraphItemPopup'
 import { NodeContextMenu } from './NodeContextMenu'
 import { useGraphStore } from '../../state/graph-store'
 import { useSettingsStore } from '../../state/settings-store'
-import { viewportFitForLayout } from '@core/layout/layout-constraints'
+import { architectureFitViewOptions } from '../../utils/graph-viewport-fit'
+import { useGraphViewportInsets } from '../../features/graph-shared/useGraphViewportInsets'
 import { getNeighborhood, getRenderableNodeIds, styleForGraphEdge, toFlowEdges, toFlowNodes, FLOW_ENTRY_HEIGHT, FLOW_NODE_HEIGHT, FLOW_NODE_WIDTH } from '../../utils/flow-adapter'
 import { searchHighlightStrength } from '../../utils/graph-search'
 import { debugArchRender, debugGraphBounds, debugTilePressure } from '../../utils/graph-debug'
 import { useLayoutTransition } from '../../hooks/use-layout-transition'
-import { pickHierarchyRingAtPoint } from '../../utils/hierarchy-ring-hit'
+import { pickLayoutGroupAtPoint } from '../../utils/hierarchy-ring-hit'
 import { layoutRuntimeFromSettings } from '../../utils/layout-settings'
-import { useStoreApi } from '@xyflow/react'
 
 const nodeTypes = { architecture: ArchitectureNode }
 const edgeTypes = { architecture: ArchitectureEdge }
@@ -44,11 +45,22 @@ function InitialViewportController() {
   const initialZoom = useSettingsStore((s) => s.initialZoom)
   const layoutAnimationDuration = useSettingsStore((s) => s.layoutAnimationDuration)
   const reduceMotion = useSettingsStore((s) => s.reduceMotion)
+  const userPositions = useGraphStore((s) => s.userPositions)
+  const settings = useSettingsStore()
+  const { legendBottomPx } = useGraphViewportInsets()
 
   useEffect(() => {
     if (!snapshot || initialCameraDone) return
 
-    const fit = viewportFitForLayout(layoutMode)
+    const runtime = layoutRuntimeFromSettings(settings)
+    const fitOpts = architectureFitViewOptions(
+      layoutMode,
+      { rightPx: 0, bottomPx: legendBottomPx + 46 },
+      initialZoom,
+      snapshot,
+      runtime,
+      userPositions
+    )
     const t = setTimeout(() => {
       const nodes = getNodes()
       if (nodes.length === 0) {
@@ -60,9 +72,9 @@ function InitialViewportController() {
         reduceMotion || nodes.length > 40 ? 0 : layoutAnimationDuration
       void fitView({
         nodes,
-        padding: fit.padding,
-        minZoom: fit.minZoom,
-        maxZoom: Math.min(fit.maxZoom, Math.max(0.82, initialZoom)),
+        padding: fitOpts.padding,
+        minZoom: fitOpts.minZoom,
+        maxZoom: fitOpts.maxZoom,
         duration
       })
       window.setTimeout(() => setInitialCameraDone(true), duration + 160)
@@ -78,7 +90,10 @@ function InitialViewportController() {
     setInitialCameraDone,
     initialZoom,
     layoutAnimationDuration,
-    reduceMotion
+    reduceMotion,
+    legendBottomPx,
+    userPositions,
+    settings
   ])
 
   return null
@@ -98,6 +113,12 @@ function LayoutTransitionController({
   const reduceMotion = useSettingsStore((s) => s.reduceMotion)
   const layoutAnimationDuration = useSettingsStore((s) => s.layoutAnimationDuration)
   const initialZoom = useSettingsStore((s) => s.initialZoom)
+  const inspectorOpen = useGraphStore((s) => s.inspectorOpen)
+  const selectedNodeId = useGraphStore((s) => s.selectedNodeId)
+  const selectedRingKey = useGraphStore((s) => s.selectedRingKey)
+  const inspectorWidth = useSettingsStore((s) => s.inspectorPanelWidth)
+  const userPositions = useGraphStore((s) => s.userPositions)
+  const settings = useSettingsStore()
   const { fitView, getNodes } = useReactFlow()
   const duration = reduceMotion ? 0 : Math.min(layoutAnimationDuration, 520)
   const pendingFitRef = useRef<{ layout: import('@core/types').LayoutMode } | null>(null)
@@ -118,15 +139,37 @@ function LayoutTransitionController({
     pendingFitRef.current = null
     const nodes = getNodes()
     if (nodes.length === 0) return
-    const fit = viewportFitForLayout(pending.layout)
+    const rightInset =
+      inspectorOpen && (selectedNodeId !== null || selectedRingKey !== null) ? inspectorWidth : 0
+    const runtime = layoutRuntimeFromSettings(settings)
+    const fitOpts = architectureFitViewOptions(
+      pending.layout,
+      { rightPx: rightInset, bottomPx: 72 },
+      initialZoom,
+      snapshot,
+      runtime,
+      userPositions
+    )
     void fitView({
       nodes,
-      padding: fit.padding,
-      minZoom: fit.minZoom,
-      maxZoom: Math.min(fit.maxZoom, Math.max(0.82, initialZoom)),
+      padding: fitOpts.padding,
+      minZoom: fitOpts.minZoom,
+      maxZoom: fitOpts.maxZoom,
       duration: reduceMotion ? 0 : 420
     })
-  }, [fitView, getNodes, initialZoom, reduceMotion])
+  }, [
+    fitView,
+    getNodes,
+    initialZoom,
+    reduceMotion,
+    inspectorOpen,
+    selectedNodeId,
+    selectedRingKey,
+    inspectorWidth,
+    snapshot,
+    userPositions,
+    settings
+  ])
 
   useLayoutTransition(
     snapshot?.positions,
@@ -198,8 +241,7 @@ export function GraphCanvas() {
   const setFocusedNodeId = useGraphStore((s) => s.setFocusedNodeId)
   const setSelectedRingKey = useGraphStore((s) => s.setSelectedRingKey)
   const selectedRingKey = useGraphStore((s) => s.selectedRingKey)
-  const store = useStoreApi()
-  const setInspectorOpen = useGraphStore((s) => s.setInspectorOpen)
+  const storeApi = useStoreApi()
   const toggleFolderExpand = useGraphStore((s) => s.toggleFolderExpand)
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; nodeId: string } | null>(
@@ -216,6 +258,7 @@ export function GraphCanvas() {
   const maxRenderedNodes = useSettingsStore((s) => s.maxRenderedNodes)
   const renderThrottlingMs = useSettingsStore((s) => s.renderThrottlingMs)
 
+  const [popupAnchor, setPopupAnchor] = useState<PopupAnchor | null>(null)
   const [dragReadyNodeId, setDragReadyNodeId] = useState<string | null>(null)
   const [selectionRefresh, setSelectionRefresh] = useState(0)
   const layoutMode = useGraphStore((s) => s.layoutMode)
@@ -481,15 +524,16 @@ export function GraphCanvas() {
   )
 
   const onNodeClick: NodeMouseHandler = useCallback(
-    (_, node) => {
+    (event, node) => {
       const kind = (node.data as { kind?: string })?.kind
       if (kind === 'folder') {
         if (selectedNodeId === node.id) {
           toggleFolderExpand(node.id)
+          setPopupAnchor(null)
         } else {
           setSelectedNodeId(node.id)
           setFocusedNodeId(node.id)
-          setInspectorOpen(true)
+          setPopupAnchor({ x: event.clientX, y: event.clientY })
         }
         return
       }
@@ -497,11 +541,13 @@ export function GraphCanvas() {
       if (selectedNodeId === node.id) {
         setSelectedNodeId(null)
         setFocusedNodeId(null)
+        setPopupAnchor(null)
         return
       }
       setSelectedNodeId(node.id)
       setFocusedNodeId(node.id)
-      setInspectorOpen(true)
+      setSelectedRingKey(null)
+      setPopupAnchor({ x: event.clientX, y: event.clientY })
       markGraphInteracting()
     },
     [
@@ -509,7 +555,7 @@ export function GraphCanvas() {
       toggleFolderExpand,
       setSelectedNodeId,
       setFocusedNodeId,
-      setInspectorOpen,
+      setSelectedRingKey,
       markGraphInteracting
     ]
   )
@@ -519,10 +565,9 @@ export function GraphCanvas() {
       event.preventDefault()
       setSelectedNodeId(node.id)
       setFocusedNodeId(node.id)
-      setInspectorOpen(true)
       setContextMenu({ x: event.clientX, y: event.clientY, nodeId: node.id })
     },
-    [setSelectedNodeId, setFocusedNodeId, setInspectorOpen]
+    [setSelectedNodeId, setFocusedNodeId]
   )
 
   const onPaneClick = useCallback(
@@ -530,21 +575,43 @@ export function GraphCanvas() {
       setContextMenu(null)
       setDragReadyNodeId(null)
 
-      if (layoutMode === 'hierarchy' && snapshot?.entryNodeId) {
+      if ((layoutMode === 'hierarchy' || layoutMode === 'pyramid') && snapshot?.entryNodeId) {
         const runtime = layoutRuntimeFromSettings(useSettingsStore.getState())
-        const [tx, ty, zoom] = store.getState().transform
-        const flowX = (event.clientX - tx) / zoom
-        const flowY = (event.clientY - ty) / zoom
-        const ringKey = pickHierarchyRingAtPoint(snapshot, runtime, flowX, flowY, zoom)
-        if (ringKey) {
-          setSelectedRingKey(selectedRingKey === ringKey ? null : ringKey)
-          return
+        const { transform, domNode } = storeApi.getState()
+        if (domNode) {
+          const rect = domNode.getBoundingClientRect()
+          const { x: flowX, y: flowY } = pointToRendererPoint(
+            { x: event.clientX - rect.left, y: event.clientY - rect.top },
+            transform
+          )
+          const groupKey = pickLayoutGroupAtPoint(
+            snapshot,
+            runtime,
+            layoutMode,
+            flowX,
+            flowY,
+            useGraphStore.getState().userPositions
+          )
+          if (groupKey) {
+            const next = selectedRingKey === groupKey ? null : groupKey
+            setSelectedRingKey(next)
+            setSelectedNodeId(null)
+            setFocusedNodeId(null)
+            if (next !== null) {
+              setPopupAnchor({ x: event.clientX, y: event.clientY })
+            } else {
+              setPopupAnchor(null)
+            }
+            return
+          }
         }
       }
 
+      // Clicking empty space clears selection and closes popup
       setSelectedRingKey(null)
       setSelectedNodeId(null)
       setFocusedNodeId(null)
+      setPopupAnchor(null)
     },
     [
       snapshot,
@@ -553,7 +620,7 @@ export function GraphCanvas() {
       setSelectedNodeId,
       setFocusedNodeId,
       setSelectedRingKey,
-      store
+      storeApi
     ]
   )
 
@@ -729,7 +796,6 @@ export function GraphCanvas() {
     return (
       <div className="relative flex-1 h-full">
         <ArchitectureOverview />
-        <NodeInspector />
         <AiChatBubble />
       </div>
     )
@@ -740,6 +806,10 @@ export function GraphCanvas() {
       ref={shellRef}
       className={`relative flex-1 h-full graph-dot-surface graph-viewport-shell${!initialCameraDone ? ' is-initializing' : ''}`}
     >
+      {/* Ring/band guides rendered BEFORE ReactFlow so they paint behind nodes */}
+      <HierarchyLabels hidden={!initialCameraDone || layoutMode !== 'hierarchy'} />
+      <PyramidLabels hidden={!initialCameraDone || layoutMode !== 'pyramid'} />
+
       <ReactFlow
         nodes={nodes}
         edges={renderedEdges}
@@ -787,11 +857,16 @@ export function GraphCanvas() {
       </ReactFlow>
 
       <ArchitectureGraphLegend nodes={snapshot.nodes} />
-      <HierarchyLabels hidden={!initialCameraDone} />
-      <PyramidLabels hidden={!initialCameraDone} />
 
-      <NodeInspector />
-      <RingInspector />
+      <GraphItemPopup
+        anchor={popupAnchor}
+        onClose={() => {
+          setPopupAnchor(null)
+          setSelectedNodeId(null)
+          setSelectedRingKey(null)
+          setFocusedNodeId(null)
+        }}
+      />
       <AiChatBubble />
 
       <AnimatePresence>

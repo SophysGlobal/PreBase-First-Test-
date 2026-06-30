@@ -42,16 +42,16 @@ const BASE_STYLES: Record<
   EdgeVisualVariant,
   { stroke: string; strokeWidth: number; opacity: number; dashed?: boolean }
 > = {
-  import: { stroke: 'rgba(195,198,215,0.38)', strokeWidth: 1.05, opacity: 0.42 },
-  service: { stroke: 'rgba(52,211,153,0.45)', strokeWidth: 1.05, opacity: 0.48 },
-  utility: { stroke: 'rgba(113,113,122,0.42)', strokeWidth: 0.95, opacity: 0.38, dashed: true },
-  entry: { stroke: 'rgba(245,158,11,0.48)', strokeWidth: 1.1, opacity: 0.52 },
-  dynamic: { stroke: 'rgba(168,85,247,0.42)', strokeWidth: 1, opacity: 0.4, dashed: true },
-  component: { stroke: 'rgba(167,139,250,0.4)', strokeWidth: 1, opacity: 0.4 },
-  'folder-link': { stroke: 'rgba(113,113,122,0.35)', strokeWidth: 0.9, opacity: 0.32, dashed: true },
-  contains: { stroke: 'rgba(113,113,122,0.22)', strokeWidth: 0.75, opacity: 0.28, dashed: true },
-  highlighted: { stroke: 'rgba(45,212,191,0.72)', strokeWidth: 1.45, opacity: 0.95 },
-  selected: { stroke: 'rgba(245,158,11,0.92)', strokeWidth: 1.65, opacity: 1 }
+  import: { stroke: 'rgba(210,215,230,0.62)', strokeWidth: 1.15, opacity: 0.62 },
+  service: { stroke: 'rgba(52,211,153,0.65)', strokeWidth: 1.15, opacity: 0.65 },
+  utility: { stroke: 'rgba(140,140,155,0.55)', strokeWidth: 1.0, opacity: 0.52, dashed: true },
+  entry: { stroke: 'rgba(245,158,11,0.70)', strokeWidth: 1.25, opacity: 0.70 },
+  dynamic: { stroke: 'rgba(168,85,247,0.60)', strokeWidth: 1.05, opacity: 0.58, dashed: true },
+  component: { stroke: 'rgba(180,160,255,0.60)', strokeWidth: 1.05, opacity: 0.58 },
+  'folder-link': { stroke: 'rgba(130,130,145,0.48)', strokeWidth: 0.95, opacity: 0.44, dashed: true },
+  contains: { stroke: 'rgba(113,113,122,0.30)', strokeWidth: 0.80, opacity: 0.34, dashed: true },
+  highlighted: { stroke: 'rgba(45,212,191,0.88)', strokeWidth: 1.55, opacity: 1.0 },
+  selected: { stroke: 'rgba(245,158,11,0.96)', strokeWidth: 1.75, opacity: 1 }
 }
 
 function classifyEdgeVariant(

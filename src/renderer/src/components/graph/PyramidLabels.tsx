@@ -1,113 +1,92 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useStoreApi } from '@xyflow/react'
+import { useMemo } from 'react'
+import { useViewport } from '@xyflow/react'
 import { getPyramidDepthBands } from '@core/layout/hierarchy-layout'
-import { depthLevelColor } from '@core/layout/layout-depth-colors'
-import { LAYOUT_NODE_BOX } from '@core/layout/layout-constraints'
+import { depthLevelColorBase, depthLevelColor } from '@core/layout/layout-depth-colors'
 import { useGraphStore } from '../../state/graph-store'
 import { useSettingsStore } from '../../state/settings-store'
+import { getEffectiveGraphPositions } from '../../utils/effective-graph-positions'
 import { layoutRuntimeFromSettings } from '../../utils/layout-settings'
-
-interface ScreenBand {
-  key: string
-  depth: number
-  top: number
-  left: number
-  width: number
-  height: number
-}
 
 interface PyramidLabelsProps {
   hidden?: boolean
 }
 
-/** Colored horizontal depth bands for pyramid layout. */
+/**
+ * Colored horizontal depth bands for Pyramid layout.
+ * Rendered as an absolute SVG that covers the graph shell, using useViewport()
+ * to convert graph→screen coordinates on every frame (no debounce, no lag).
+ * Placed BEFORE <ReactFlow> in the DOM so it renders behind nodes.
+ */
 export function PyramidLabels({ hidden = false }: PyramidLabelsProps) {
   const snapshot = useGraphStore((s) => s.snapshot)
+  const userPositions = useGraphStore((s) => s.userPositions)
   const layoutMode = useGraphStore((s) => s.layoutMode)
+  const selectedRingKey = useGraphStore((s) => s.selectedRingKey)
   const settings = useSettingsStore()
-  const store = useStoreApi()
-  const [bands, setBands] = useState<ScreenBand[]>([])
+
+  // Reactive viewport transform — updates on every pan/zoom frame, no debounce
+  const { x: tx, y: ty, zoom } = useViewport()
 
   const bandData = useMemo(() => {
-    if (layoutMode !== 'pyramid' || !snapshot?.entryNodeId || !snapshot.positions) return null
+    if (layoutMode !== 'pyramid' || !snapshot?.entryNodeId) return null
+    const positions = getEffectiveGraphPositions(snapshot, userPositions)
     const runtime = layoutRuntimeFromSettings(settings)
     const bands = getPyramidDepthBands(
       snapshot.nodes,
       snapshot.edges,
       snapshot.entryNodeId,
-      snapshot.positions,
+      positions,
       runtime,
       runtime.organizationMethod
     )
-    if (bands.length === 0) return null
+    return bands.length > 0 ? bands : null
+  }, [snapshot, userPositions, layoutMode, settings])
 
-    const xs = Object.values(snapshot.positions).map((p) => p.x)
-    const minX = Math.min(...xs)
-    const maxX = Math.max(...xs, minX) + LAYOUT_NODE_BOX.width
-    const pad = 48
-    return { bands, minX: minX - pad, width: maxX - minX + pad * 2 }
-  }, [snapshot, layoutMode, settings])
-
-  useEffect(() => {
-    if (!bandData || hidden) {
-      setBands([])
-      return
-    }
-
-    let debounce = 0
-    const project = () => {
-      const [tx, ty, zoom] = store.getState().transform
-      const { bands, minX, width } = bandData
-      setBands(
-        bands.map((b) => ({
-          key: `depth-${b.depth}`,
-          depth: b.depth,
-          top: b.y * zoom + ty,
-          left: minX * zoom + tx,
-          width: width * zoom,
-          height: b.height * zoom
-        }))
-      )
-    }
-
-    const schedule = () => {
-      window.clearTimeout(debounce)
-      debounce = window.setTimeout(project, 120)
-    }
-
-    project()
-    return store.subscribe((state, prev) => {
-      const t = state.transform
-      const pt = prev.transform
-      if (t[0] === pt[0] && t[1] === pt[1] && t[2] === pt[2]) return
-      schedule()
-    })
-  }, [bandData, hidden, store])
-
-  if (hidden || !bandData || bands.length === 0) return null
+  if (hidden || !bandData) return null
 
   return (
-    <div
-      className="pointer-events-none absolute inset-0 z-[2] overflow-hidden pyramid-labels-layer transition-opacity duration-200"
+    <svg
+      className="absolute inset-0 pointer-events-none pyramid-labels-layer"
+      style={{ width: '100%', height: '100%', zIndex: 1, overflow: 'visible' }}
       aria-hidden
     >
-      {bands.map((band) => {
+      {bandData.map((band) => {
+        const selected = selectedRingKey === band.key
         const color = depthLevelColor(band.depth)
+        const baseColor = depthLevelColorBase(band.depth)
+        // Convert graph-space band rect to screen-space
+        const sx = band.x * zoom + tx
+        const sy = band.y * zoom + ty
+        const sw = band.width * zoom
+        const sh = band.height * zoom
+        const fillColor = color.replace(/[\d.]+\)$/, `${selected ? 0.22 : 0.14})`)
         return (
-          <div
-            key={band.key}
-            className="absolute border-t border-b"
-            style={{
-              top: band.top,
-              left: band.left,
-              width: band.width,
-              height: band.height,
-              borderColor: color,
-              backgroundColor: color.replace(/[\d.]+\)$/, '0.05)')
-            }}
-          />
+          <g key={band.key}>
+            {/* Band background */}
+            <rect
+              x={sx}
+              y={sy}
+              width={sw}
+              height={sh}
+              rx={Math.max(3, 8 * zoom)}
+              fill={fillColor}
+              stroke={baseColor}
+              strokeWidth={selected ? Math.max(1.2, 1.8 * zoom) : Math.max(0.6, 1.0 * zoom)}
+              strokeOpacity={selected ? 0.80 : 0.50}
+            />
+            {/* Top accent line */}
+            <line
+              x1={sx + Math.max(6, 12 * zoom)}
+              y1={sy}
+              x2={sx + sw - Math.max(6, 12 * zoom)}
+              y2={sy}
+              stroke={baseColor}
+              strokeWidth={selected ? Math.max(1.2, 2.0 * zoom) : Math.max(0.8, 1.2 * zoom)}
+              strokeOpacity={selected ? 0.90 : 0.60}
+            />
+          </g>
         )
       })}
-    </div>
+    </svg>
   )
 }

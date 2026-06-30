@@ -1,6 +1,6 @@
 import type { GraphEdge, GraphNode } from '../types'
 import { classifyNodeLayer, computeNodeImportance, type ArchitectureLayerId } from '../utils/architecture-layers'
-import { computeDependencyDepths } from './dependency-depth'
+import { computeEntryPointDepthGroups } from './dependency-depth'
 
 export type LayoutOrganizationMethod =
   | 'dependency-depth'
@@ -89,8 +89,8 @@ export function computeOrganizationLayers(
   const nodeIds = layoutNodes.map((n) => n.id)
 
   if (method === 'dependency-depth') {
-    const { layers, depth } = computeDependencyDepths(nodes, edges, entryNodeId)
-    return { layers, entryNodeId, ranks: depth }
+    const result = computeEntryPointDepthGroups(nodes, edges, entryNodeId)
+    return { layers: result.layers, entryNodeId, ranks: result.depth }
   }
 
   if (method === 'import-importance') {

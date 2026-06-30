@@ -22,7 +22,7 @@ export function GraphZoomControls({
 
   return (
     <div
-      className="absolute z-20 flex items-center gap-1 p-1 rounded-xl border border-border-subtle bg-surface-overlay/95 shadow-panel titlebar-no-drag"
+      className="absolute z-20 flex items-center gap-1 p-1 rounded-xl border border-border-subtle bg-[#141518] shadow-panel titlebar-no-drag"
       style={{ left: GRAPH_FLOAT_LEFT_PX, bottom: zoomBottomPx }}
     >
       <button

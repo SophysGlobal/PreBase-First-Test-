@@ -199,7 +199,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       focusedNodeId: nodeId,
       selectedEdgeId: null,
       selectedRingKey: null,
-      inspectorOpen: true
+      inspectorOpen: false
     }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
   setFocusedNodeId: (focusedNodeId) => set({ focusedNodeId }),
@@ -209,7 +209,7 @@ export const useGraphStore = create<GraphStore>((set, get) => ({
       focusedNodeId: selectedNodeId,
       selectedEdgeId: null,
       selectedRingKey: selectedNodeId !== null ? null : get().selectedRingKey,
-      inspectorOpen: selectedNodeId !== null
+      inspectorOpen: false
     }),
   setSelectedEdgeId: (selectedEdgeId) =>
     set({ selectedEdgeId, selectedNodeId: null, selectedRingKey: null, inspectorOpen: true }),

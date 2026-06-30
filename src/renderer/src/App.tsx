@@ -60,11 +60,16 @@ export default function App() {
         setSnapshot(result.snapshot)
         const settings = useSettingsStore.getState()
         setLayoutMode(settings.defaultLayout)
+        const runtime = layoutRuntimeFromSettings(settings)
         const relaid = await window.prebase.relayout(
           settings.defaultLayout,
-          layoutRuntimeFromSettings(settings)
+          runtime
         )
+        const snap = relaid ?? result.snapshot
         if (relaid) setSnapshot(relaid)
+        const positions = computeClientLayout(snap, settings.defaultLayout, runtime)
+        useGraphStore.getState().applyLayoutPositions(positions, { resetCamera: true })
+        setLoading(false)
 
         const stats = computeLanguageStats(result.snapshot.nodes)
         const fileCount = result.snapshot.nodes.filter(
@@ -109,7 +114,14 @@ export default function App() {
   )
 
   useEffect(() => {
-    const unsubFull = window.prebase.onGraphFull((s) => setSnapshot(s))
+    const unsubFull = window.prebase.onGraphFull((s) => {
+      setSnapshot(s)
+      const settings = useSettingsStore.getState()
+      const currentLayout = useGraphStore.getState().layoutMode
+      const runtime = layoutRuntimeFromSettings(settings)
+      const positions = computeClientLayout(s, currentLayout, runtime)
+      useGraphStore.getState().applyLayoutPositions(positions, { resetCamera: false })
+    })
     const unsubInc = window.prebase.onGraphIncremental((u) => applyIncremental(u))
     return () => {
       unsubFull()

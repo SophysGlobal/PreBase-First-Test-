@@ -16,6 +16,7 @@ import { APP_NAME, APP_VERSION, SUPPORTED_LANGUAGES } from '../../../../core/con
 import { LAYOUT_PRESETS } from '../../constants/graph-help'
 import { useSettingsStore } from '../../state/settings-store'
 import { useGraphStore } from '../../state/graph-store'
+import { computeClientLayout } from '../../utils/arch-layout-client'
 import { layoutRuntimeFromSettings } from '../../utils/layout-settings'
 
 type SettingsCategory =
@@ -82,16 +83,17 @@ export function SettingsView() {
   const snapshot = useGraphStore((s) => s.snapshot)
   const layoutMode = useGraphStore((s) => s.layoutMode)
   const setLayoutMode = useGraphStore((s) => s.setLayoutMode)
-  const setSnapshot = useGraphStore((s) => s.setSnapshot)
 
   const settings = useSettingsStore()
 
   const applyGraphRelayout = useCallback(async () => {
     if (!snapshot) return
     const s = useSettingsStore.getState()
-    const updated = await window.prebase.relayout(layoutMode, layoutRuntimeFromSettings(s))
-    if (updated) setSnapshot(updated)
-  }, [snapshot, layoutMode, setSnapshot])
+    const runtime = layoutRuntimeFromSettings(s)
+    const positions = computeClientLayout(snapshot, layoutMode, runtime)
+    useGraphStore.getState().applyLayoutPositions(positions, { resetCamera: true })
+    void window.prebase.relayout(layoutMode, runtime, { broadcast: false })
+  }, [snapshot, layoutMode])
 
   const graphLanguages = SUPPORTED_LANGUAGES.filter((l) => l.graphImports)
 
@@ -525,6 +527,17 @@ export function SettingsView() {
                         Network graph
                       </p>
                     </div>
+                    <Row
+                      label="Auto-rotate when idle"
+                      hint="Slowly rotates the network graph when you are not interacting."
+                    >
+                      <input
+                        type="checkbox"
+                        checked={settings.networkIdleAutoRotate}
+                        onChange={(e) => settings.setNetworkIdleAutoRotate(e.target.checked)}
+                        className="accent-teal-400"
+                      />
+                    </Row>
                     <Row
                       label="Physics strength"
                       hint="Scales repulsion and centering forces in the network view."

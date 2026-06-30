@@ -197,6 +197,13 @@ a,
 .hierarchy-labels-layer {
   contain: layout paint;
   pointer-events: none;
+  z-index: 0 !important;
+}
+
+.pyramid-labels-layer {
+  contain: layout paint;
+  pointer-events: none;
+  z-index: 0 !important;
 }
 
 /* Startup only: defer heavy SVG/minimap until initial camera fit completes. */
@@ -214,18 +221,7 @@ a,
   transition: opacity 0.22s ease, filter 0.22s ease;
 }
 
-/* While zooming/panning: dim overlays; keep edges visible with lighter paint. */
-.graph-viewport-shell.is-zooming .hierarchy-labels-layer,
-.graph-viewport-shell.is-layout-transitioning .hierarchy-labels-layer,
-.graph-viewport-shell.is-graph-interacting .hierarchy-labels-layer,
-.graph-viewport-shell.is-zooming .pyramid-labels-layer,
-.graph-viewport-shell.is-layout-transitioning .pyramid-labels-layer,
-.graph-viewport-shell.is-graph-interacting .pyramid-labels-layer {
-  opacity: 0.35;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-}
-
+/* Rings stay fully visible during pan/zoom — they live in the viewport transform. */
 .graph-viewport-shell.is-zooming .react-flow__minimap,
 .graph-viewport-shell.is-layout-transitioning .react-flow__minimap {
   display: none !important;
@@ -233,14 +229,13 @@ a,
   pointer-events: none;
 }
 
-/* Legend dims smoothly during interaction — never hidden. */
+/* Legend dims slightly during interaction — always readable. */
 .graph-viewport-shell.is-zooming .graph-legend-overlay,
 .graph-viewport-shell.is-layout-transitioning .graph-legend-overlay,
 .graph-viewport-shell.is-graph-interacting .graph-legend-overlay {
-  opacity: var(--legend-dim-opacity, 0.58);
-  filter: brightness(0.86);
+  opacity: var(--legend-dim-opacity, 0.85);
   pointer-events: none;
-  transition: opacity 0.22s ease, filter 0.22s ease;
+  transition: opacity 0.22s ease;
 }
 
 /* Simplified edge paint during zoom — stay visible, drop expensive markers/glow. */

@@ -15,9 +15,9 @@ export interface LayoutRuntimeConfig {
 
 export const DEFAULT_LAYOUT_RUNTIME: LayoutRuntimeConfig = {
   layerRadiusScale: 1,
-  maxNodesPerLayer: 12,
-  layerGap: 128,
-  centerClearance: 100,
+  maxNodesPerLayer: 24,
+  layerGap: 52,
+  centerClearance: 44,
   scatterRelaxIterations: 22,
   spacingScale: 1,
   organizationMethod: 'dependency-depth'

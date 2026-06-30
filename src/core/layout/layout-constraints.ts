@@ -261,6 +261,42 @@ export function measureAxisAlignedBounds(
   return { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY }
 }
 
+/** Scale all nodes radially from the entry center to fit within a max disc radius. */
+export function capRadialLayoutFromCenter(
+  positions: Record<string, LayoutPosition>,
+  entryNodeId: string,
+  maxRadius: number,
+  boxW: number,
+  boxH: number
+): void {
+  const entry = positions[entryNodeId]
+  if (!entry || maxRadius <= 0) return
+
+  const cx = entry.x + boxW / 2
+  const cy = entry.y + boxH / 2
+  const nodeExtent = Math.hypot(boxW, boxH) / 2
+
+  let maxDist = 0
+  for (const [id, p] of Object.entries(positions)) {
+    if (id === entryNodeId) continue
+    const dist = Math.hypot(p.x + boxW / 2 - cx, p.y + boxH / 2 - cy) + nodeExtent
+    maxDist = Math.max(maxDist, dist)
+  }
+
+  if (maxDist <= maxRadius || maxDist === 0) return
+
+  const scale = maxRadius / maxDist
+  for (const [id, p] of Object.entries(positions)) {
+    if (id === entryNodeId) continue
+    const dx = p.x + boxW / 2 - cx
+    const dy = p.y + boxH / 2 - cy
+    positions[id] = {
+      x: cx + dx * scale - boxW / 2,
+      y: cy + dy * scale - boxH / 2
+    }
+  }
+}
+
 /** Uniformly scale layout around its center to fit within max width/height. */
 export function capLayoutBoundingBox(
   positions: Record<string, LayoutPosition>,

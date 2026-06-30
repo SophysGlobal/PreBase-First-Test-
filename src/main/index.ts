@@ -1,10 +1,27 @@
+import { config as loadEnv } from 'dotenv'
 import { existsSync } from 'fs'
 import { readFile } from 'fs/promises'
-import { resolveProjectFilePath } from '../core/utils/path-utils'
+import { join, resolve } from 'path'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { join } from 'path'
+import { resolveProjectFilePath } from '../core/utils/path-utils'
 import { ProjectService } from '../core/services/project-service'
 import type { GraphSnapshot, IncrementalUpdate, LayoutMode } from '../core/types'
+import {
+  describeFile,
+  describeLayer,
+  isGeminiAvailable,
+  type DescribeFileParams,
+  type DescribeLayerParams
+} from './ai/geminiService'
+import { magnusChat, geminiPing, type MagnusChatParams } from './ai/magnusService'
+import { logKeyDiagnostics } from './ai/apiKeyLoader'
+
+// Load .env — best-effort; apiKeyLoader reads the file directly so this is a secondary path.
+const dotenvPath = resolve(process.cwd(), '.env')
+loadEnv({ path: dotenvPath, override: true })
+
+// Print key diagnostics to the main-process console in dev mode.
+logKeyDiagnostics()
 
 const isDev = !app.isPackaged
 
@@ -130,6 +147,39 @@ app.whenReady().then(() => {
       console.warn('[file:read] failed:', filePath, err)
       return null
     }
+  })
+
+  ipcMain.handle('ai:gemini-available', () => isGeminiAvailable())
+
+  ipcMain.handle('ai:describe-file', async (_, params: DescribeFileParams) => {
+    try {
+      return await describeFile(params)
+    } catch (err) {
+      console.warn('[ai:describe-file] error:', err)
+      return ''
+    }
+  })
+
+  ipcMain.handle('ai:describe-layer', async (_, params: DescribeLayerParams) => {
+    try {
+      return await describeLayer(params)
+    } catch (err) {
+      console.warn('[ai:describe-layer] error:', err)
+      return ''
+    }
+  })
+
+  ipcMain.handle('ai:magnus-chat', async (_, params: MagnusChatParams) => {
+    try {
+      return await magnusChat(params)
+    } catch (err) {
+      console.warn('[ai:magnus-chat] error:', err)
+      return 'Error communicating with Magnus. Please try again.'
+    }
+  })
+
+  ipcMain.handle('ai:gemini-ping', async () => {
+    return await geminiPing()
   })
 
   createWindow()

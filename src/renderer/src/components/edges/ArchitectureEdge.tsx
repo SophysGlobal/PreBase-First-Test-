@@ -32,18 +32,30 @@ function ArchitectureEdgeComponent(props: EdgeProps) {
   })
 
   const stroke = (style.stroke as string) ?? 'rgba(255,255,255,0.35)'
-  const strokeWidth = Number(style.strokeWidth ?? 1.1)
+  const strokeWidth = Number(style.strokeWidth ?? 1.15)
   const opacity = Number(style.opacity ?? 0.9)
 
+  // Dark halo behind edge improves contrast over colored ring backgrounds
+  const haloWidth = strokeWidth + 2.2
+  const isDashed = (style as { strokeDasharray?: string }).strokeDasharray != null ||
+    variant === 'dynamic' || variant === 'utility' || variant === 'folder-link' || variant === 'contains'
+
   return (
-    <g className="react-flow__edge">
+    <g className="react-flow__edge" style={{ pointerEvents: 'none' }}>
+      {/* Dark contrast halo rendered beneath the colored edge */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="rgba(10,10,12,0.55)"
+        strokeWidth={haloWidth}
+        strokeLinecap="round"
+        strokeDasharray={isDashed ? (style as { strokeDasharray?: string }).strokeDasharray : undefined}
+        opacity={opacity * 0.75}
+      />
       <BaseEdge
         id={id}
         path={edgePath}
         markerEnd={markerEnd}
-        // Edges are non-interactive: no hit area, no pointer events. This stops
-        // the cursor from triggering edge repaints while sweeping the graph
-        // (a primary flicker source). Relationship info lives in the inspector.
         interactionWidth={0}
         className="react-flow__edge-path"
         style={{

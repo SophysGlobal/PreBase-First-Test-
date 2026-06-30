@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { LayoutRuntimeConfig } from '../core/layout/layout-config'
 import type { GraphSnapshot, IncrementalUpdate, LayoutMode } from '../core/types'
+import type { DescribeFileParams, DescribeLayerParams } from '../main/ai/geminiService'
+import type { MagnusChatParams, GeminiPingResult } from '../main/ai/magnusService'
 
 export interface PrebaseAPI {
   openProjectDialog: () => Promise<string | null>
@@ -16,6 +18,16 @@ export interface PrebaseAPI {
   showItemInFolder: (path: string) => Promise<{ success: boolean; error?: string }>
   onGraphFull: (callback: (snapshot: GraphSnapshot) => void) => () => void
   onGraphIncremental: (callback: (update: IncrementalUpdate) => void) => () => void
+  /** Returns whether GEMINI_API_KEY is configured in the main process. */
+  isGeminiAvailable: () => Promise<boolean>
+  /** Request AI description for a file (main process handles key securely). */
+  describeFile: (params: DescribeFileParams) => Promise<string>
+  /** Request AI description for a depth layer (main process handles key securely). */
+  describeLayer: (params: DescribeLayerParams) => Promise<string>
+  /** Send a code/project question to Magnus AI (main process handles key securely). */
+  magnusChat: (params: MagnusChatParams) => Promise<string>
+  /** Diagnostic ping — minimal Gemini call, returns raw result for troubleshooting. */
+  geminiPing: () => Promise<GeminiPingResult>
 }
 
 const api: PrebaseAPI = {
@@ -35,7 +47,12 @@ const api: PrebaseAPI = {
     const handler = (_: Electron.IpcRendererEvent, update: IncrementalUpdate) => callback(update)
     ipcRenderer.on('graph:incremental', handler)
     return () => ipcRenderer.removeListener('graph:incremental', handler)
-  }
+  },
+  isGeminiAvailable: () => ipcRenderer.invoke('ai:gemini-available'),
+  describeFile: (params) => ipcRenderer.invoke('ai:describe-file', params),
+  describeLayer: (params) => ipcRenderer.invoke('ai:describe-layer', params),
+  magnusChat: (params) => ipcRenderer.invoke('ai:magnus-chat', params),
+  geminiPing: () => ipcRenderer.invoke('ai:gemini-ping')
 }
 
 contextBridge.exposeInMainWorld('prebase', api)

@@ -71,6 +71,8 @@ export interface AppSettings {
   networkEdgeOpacity: number
   /** Network graph empty-space rotation direction. */
   networkDragDirection: 'natural' | 'inverted'
+  /** Slow auto-rotation when the network graph is idle. */
+  networkIdleAutoRotate: boolean
   /** Up to 2 edge relationship categories visible on graphs. */
   visibleEdgeCategories: GraphEdgeCategory[]
   /** When true, long sidebar sections start collapsed. */
@@ -122,6 +124,7 @@ interface SettingsStore extends AppSettings {
   setNetworkPhysicsStrength: (value: number) => void
   setNetworkEdgeOpacity: (value: number) => void
   setNetworkDragDirection: (value: 'natural' | 'inverted') => void
+  setNetworkIdleAutoRotate: (on: boolean) => void
   setVisibleEdgeCategories: (categories: GraphEdgeCategory[]) => void
   toggleVisibleEdgeCategory: (category: GraphEdgeCategory) => void
   setCollapseSidebarSectionsDefault: (on: boolean) => void
@@ -172,6 +175,7 @@ const defaults: AppSettings = {
   networkPhysicsStrength: 1,
   networkEdgeOpacity: 0.55,
   networkDragDirection: 'natural',
+  networkIdleAutoRotate: true,
   visibleEdgeCategories: [...DEFAULT_VISIBLE_EDGE_CATEGORIES],
   collapseSidebarSectionsDefault: true,
   legendInteractionDimAmount: 40
@@ -228,6 +232,7 @@ export const useSettingsStore = create<SettingsStore>()(
       setNetworkPhysicsStrength: (networkPhysicsStrength) => set({ networkPhysicsStrength }),
       setNetworkEdgeOpacity: (networkEdgeOpacity) => set({ networkEdgeOpacity }),
       setNetworkDragDirection: (networkDragDirection) => set({ networkDragDirection }),
+      setNetworkIdleAutoRotate: (networkIdleAutoRotate) => set({ networkIdleAutoRotate }),
       setVisibleEdgeCategories: (visibleEdgeCategories) => set({ visibleEdgeCategories }),
       toggleVisibleEdgeCategory: (category) =>
         set((s) => ({
@@ -300,6 +305,7 @@ export const useSettingsStore = create<SettingsStore>()(
         if (state.networkPhysicsStrength === undefined) state.networkPhysicsStrength = 1
         if (state.networkEdgeOpacity === undefined) state.networkEdgeOpacity = 0.55
         if (state.networkDragDirection === undefined) state.networkDragDirection = 'natural'
+        if (state.networkIdleAutoRotate === undefined) state.networkIdleAutoRotate = true
         if (!Array.isArray(state.visibleEdgeCategories) || state.visibleEdgeCategories.length === 0) {
           state.visibleEdgeCategories = [...DEFAULT_VISIBLE_EDGE_CATEGORIES]
         } else if (state.visibleEdgeCategories.length > 2) {
