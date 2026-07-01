@@ -30,11 +30,21 @@ interface GenerateRequest {
   contents: GeminiContent[]
   systemInstruction?: { parts: GeminiPart[] }
   generationConfig?: Record<string, unknown>
+  /** Gemini's built-in Google Search grounding tool — used only for code/project questions. */
+  tools?: Array<{ googleSearch: Record<string, never> }>
+}
+
+interface GroundingChunk {
+  web?: { uri?: string; title?: string }
 }
 
 interface GeminiResponseCandidate {
   content: { parts: GeminiPart[]; role: string }
   finishReason: string
+  groundingMetadata?: {
+    webSearchQueries?: string[]
+    groundingChunks?: GroundingChunk[]
+  }
 }
 
 interface GeminiResponse {
@@ -42,15 +52,23 @@ interface GeminiResponse {
   error?: { code: number; message: string; status: string }
 }
 
+export interface GroundedResult {
+  text: string
+  /** True only if Gemini actually issued a web search for this response. */
+  usedWebSearch: boolean
+  /** Distinct source titles/domains actually consulted, if any. */
+  sources: string[]
+}
+
 /**
- * Try one specific auth method. Returns the response text or throws with the raw error JSON.
+ * Try one specific auth method. Returns the parsed candidate or throws with the raw error JSON.
  */
 async function tryAuth(
   apiKey: string,
   model: string,
   body: GenerateRequest,
   method: 'query' | 'header' | 'bearer'
-): Promise<string> {
+): Promise<GeminiResponseCandidate | undefined> {
   const baseUrl = `${BASE_URL}/models/${model}:generateContent`
   const url = method === 'query'
     ? `${baseUrl}?key=${encodeURIComponent(apiKey)}`
@@ -67,18 +85,18 @@ async function tryAuth(
     throw new Error(JSON.stringify(json.error ?? { code: res.status, message: `HTTP ${res.status}` }))
   }
 
-  return (json.candidates?.[0]?.content?.parts?.[0]?.text ?? '').trim()
+  return json.candidates?.[0]
 }
 
 /**
- * Make a generateContent call, automatically finding the right auth method.
+ * Runs the request through each supported auth method, automatically finding the right one.
  * Tries: x-goog-api-key header → ?key= query param → Authorization: Bearer
  */
-export async function generateContent(
+async function generateCandidate(
   apiKey: string,
   model: string,
   body: GenerateRequest
-): Promise<string> {
+): Promise<GeminiResponseCandidate | undefined> {
   const methods: Array<'header' | 'query' | 'bearer'> = ['header', 'query', 'bearer']
   let lastError: Error | undefined
 
@@ -102,4 +120,44 @@ export async function generateContent(
   }
 
   throw lastError ?? new Error('All auth methods failed')
+}
+
+/**
+ * Make a generateContent call, automatically finding the right auth method.
+ */
+export async function generateContent(
+  apiKey: string,
+  model: string,
+  body: GenerateRequest
+): Promise<string> {
+  const candidate = await generateCandidate(apiKey, model, body)
+  return (candidate?.content?.parts?.[0]?.text ?? '').trim()
+}
+
+/**
+ * Like generateContent, but requests Gemini's built-in Google Search grounding tool and
+ * reports back whether a web search actually happened (and which sources were consulted).
+ * Never fabricates search activity — usedWebSearch reflects Gemini's real grounding metadata.
+ */
+export async function generateContentGrounded(
+  apiKey: string,
+  model: string,
+  body: GenerateRequest
+): Promise<GroundedResult> {
+  const candidate = await generateCandidate(apiKey, model, {
+    ...body,
+    tools: [{ googleSearch: {} }]
+  })
+  const text = (candidate?.content?.parts?.[0]?.text ?? '').trim()
+  const grounding = candidate?.groundingMetadata
+  const usedWebSearch = !!grounding && (grounding.webSearchQueries?.length ?? 0) > 0
+  const sources = Array.from(
+    new Set(
+      (grounding?.groundingChunks ?? [])
+        .map((c) => c.web?.title || c.web?.uri)
+        .filter((s): s is string => !!s)
+    )
+  ).slice(0, 4)
+
+  return { text, usedWebSearch, sources }
 }

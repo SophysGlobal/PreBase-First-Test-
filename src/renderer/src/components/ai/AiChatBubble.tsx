@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronDown, Loader2, PanelRightClose, Send, Sparkles, X } from 'lucide-react'
+import { ChevronDown, Loader2, PanelRightClose, Send, Sparkles } from 'lucide-react'
 import { useGraphStore } from '../../state/graph-store'
 import { useSettingsStore, MAGNUS_MODELS } from '../../state/settings-store'
 import { useGraphViewportInsets } from '../../features/graph-shared/useGraphViewportInsets'
@@ -11,6 +11,15 @@ interface ChatMessage {
   role: 'user' | 'model'
   content: string
 }
+
+/** A concise, externally-visible activity step — never hidden reasoning. */
+interface ActivityEvent {
+  id: string
+  label: string
+  status: 'active' | 'done'
+}
+
+const SIDEBAR_WIDTH = 268
 
 function buildProjectContext(snapshot: ReturnType<typeof useGraphStore.getState>['snapshot']) {
   if (!snapshot) return {}
@@ -136,25 +145,32 @@ function ModelPicker({
             <div className="px-3 py-2 border-b border-border-subtle">
               <p className="text-[10px] uppercase tracking-wider text-text-muted">Select model</p>
             </div>
-            <div className="p-1.5 space-y-0.5">
+            <div className="p-1.5 space-y-0.5 max-h-64 overflow-y-auto sidebar-scroll">
               {MAGNUS_MODELS.map((m) => {
                 const isActive = m.id === selectedId
+                const disabled = !m.enabled
                 return (
                   <button
                     key={m.id}
                     type="button"
-                    onClick={() => { onChange(m.id); setOpen(false) }}
+                    disabled={disabled}
+                    onClick={() => { if (!disabled) { onChange(m.id); setOpen(false) } }}
+                    title={disabled ? m.disabledReason : undefined}
                     className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left transition-colors ${
-                      isActive
-                        ? 'bg-accent/12 border border-accent/20'
-                        : 'hover:bg-white/[0.05] border border-transparent'
+                      disabled
+                        ? 'opacity-40 cursor-not-allowed'
+                        : isActive
+                          ? 'bg-accent/12 border border-accent/20'
+                          : 'hover:bg-white/[0.05] border border-transparent'
                     }`}
                   >
                     <div className="min-w-0 flex-1">
                       <p className={`text-xs font-medium truncate ${isActive ? 'text-accent' : 'text-text-primary'}`}>
                         {m.label}
                       </p>
-                      <p className="text-[10px] text-text-muted truncate">{m.description}</p>
+                      <p className="text-[10px] text-text-muted truncate">
+                        {disabled && m.disabledReason ? m.disabledReason : m.description}
+                      </p>
                     </div>
                     {isActive && (
                       <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
@@ -175,24 +191,89 @@ function ModelPicker({
   )
 }
 
+/** Cursor-like activity/status feed. Shows only externalized actions — never hidden reasoning. */
+function ActivityFeed({ events }: { events: ActivityEvent[] }) {
+  if (events.length === 0) return null
+  const visible = events.slice(-6)
+  return (
+    <div className="flex flex-col gap-1 py-0.5">
+      {visible.map((ev) => (
+        <div key={ev.id} className="flex items-center gap-1.5">
+          {ev.status === 'active' ? (
+            <span className="magnus-shimmer text-[11px] font-medium">{ev.label}</span>
+          ) : (
+            <>
+              <span className="w-1 h-1 rounded-full bg-accent/60 shrink-0" />
+              <span className="text-[11px] text-text-muted">{ev.label}</span>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** Small reopen handle shown when Magnus is minimized. */
+function MagnusNub({
+  isSidebar,
+  onOpen,
+  rightPx
+}: {
+  isSidebar: boolean
+  onOpen: () => void
+  rightPx: number
+}) {
+  if (isSidebar) {
+    return (
+      <motion.button
+        type="button"
+        initial={{ opacity: 0, x: 8 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: 8 }}
+        whileHover={{ x: -2 }}
+        onClick={onOpen}
+        title="Open Magnus"
+        className="absolute top-1/2 right-0 -translate-y-1/2 z-30 flex items-center gap-1.5 pl-2.5 pr-1.5 py-2.5 rounded-l-xl border border-r-0 border-border-subtle bg-[#141518] text-accent shadow-[-4px_0_16px_rgba(0,0,0,0.35)] hover:shadow-[-4px_0_20px_rgba(45,212,191,0.18)] transition-shadow titlebar-no-drag"
+      >
+        <Sparkles className="w-3.5 h-3.5" />
+      </motion.button>
+    )
+  }
+  return (
+    <motion.button
+      type="button"
+      initial={{ opacity: 0, y: 8, scale: 0.9 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 8, scale: 0.9 }}
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.97 }}
+      onClick={onOpen}
+      title="Open Magnus"
+      className="absolute bottom-6 z-30 flex items-center gap-2 px-3.5 py-2 rounded-full border border-border-subtle bg-[#141518] text-text-secondary hover:text-accent hover:border-accent/35 transition-colors shadow-panel titlebar-no-drag"
+      style={{ right: rightPx, boxShadow: 'var(--shadow-panel), 0 0 20px rgba(45, 212, 191, 0.08)' }}
+    >
+      <Sparkles className="w-3.5 h-3.5 text-accent" />
+      <span className="text-xs font-medium">Magnus</span>
+    </motion.button>
+  )
+}
+
 /** Shared header bar used in both float and sidebar modes. */
 function MagnusHeader({
-  onClose,
+  onMinimize,
   onClear,
   onPing,
   hasMsgs,
-  pinging,
-  isSidebar
+  pinging
 }: {
-  onClose: () => void
+  onMinimize: () => void
   onClear: () => void
   onPing: () => void
   hasMsgs: boolean
   pinging: boolean
-  isSidebar: boolean
 }) {
   return (
-    <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle bg-gradient-to-r from-accent-soft/30 to-transparent shrink-0">
+    <div className="flex items-center justify-between px-3.5 py-3 border-b border-border-subtle bg-gradient-to-r from-accent-soft/30 to-transparent shrink-0">
       <div className="flex items-center gap-2">
         <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-accent-soft border border-accent/20">
           <Sparkles className="w-3.5 h-3.5 text-accent" />
@@ -224,11 +305,11 @@ function MagnusHeader({
         )}
         <button
           type="button"
-          onClick={onClose}
+          onClick={onMinimize}
           className="p-1 rounded hover:bg-surface-muted text-text-muted"
-          title={isSidebar ? 'Collapse sidebar' : 'Close Magnus'}
+          title="Minimize Magnus"
         >
-          {isSidebar ? <PanelRightClose className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+          <PanelRightClose className="w-3.5 h-3.5" />
         </button>
       </div>
     </div>
@@ -238,6 +319,8 @@ function MagnusHeader({
 /** Shared messages + input area. */
 function MagnusBody({
   messages,
+  activity,
+  streamingText,
   loading,
   input,
   inputRef,
@@ -249,6 +332,8 @@ function MagnusBody({
   onModelChange
 }: {
   messages: ChatMessage[]
+  activity: ActivityEvent[]
+  streamingText: string | null
   loading: boolean
   input: string
   inputRef: React.RefObject<HTMLInputElement>
@@ -287,9 +372,15 @@ function MagnusBody({
           </div>
         ))}
         {loading && (
-          <div className="flex items-center gap-2 text-text-muted">
-            <Loader2 className="w-3 h-3 animate-spin text-accent/70" />
-            <span className="text-[11px] italic">Magnus is thinking…</span>
+          <div className="flex flex-col gap-1 min-w-0 w-full items-start">
+            <span className="text-[9px] uppercase tracking-wider text-text-muted">Magnus</span>
+            <div className="rounded-xl px-3 py-2 min-w-0 max-w-[95%] bg-surface-muted border border-border-subtle text-text-secondary">
+              {streamingText === null ? (
+                <ActivityFeed events={activity} />
+              ) : (
+                <MdMessage content={streamingText} isUser={false} />
+              )}
+            </div>
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -317,7 +408,7 @@ function MagnusBody({
               disabled={!input.trim() || loading}
               className="p-1.5 rounded-lg bg-accent/15 hover:bg-accent/25 border border-accent/20 text-accent disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              <Send className="w-3 h-3" />
+              {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
             </button>
           </div>
         </div>
@@ -327,34 +418,44 @@ function MagnusBody({
 }
 
 export function AiChatBubble() {
-  const [expanded, setExpanded] = useState(false)
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [pinging, setPinging] = useState(false)
+  const [activity, setActivity] = useState<ActivityEvent[]>([])
+  const [streamingText, setStreamingText] = useState<string | null>(null)
   const { magnusRightPx } = useGraphViewportInsets()
   const magnusMode = useSettingsStore((s) => s.magnusMode)
   const magnusModel = useSettingsStore((s) => s.magnusModel)
   const setMagnusModel = useSettingsStore((s) => s.setMagnusModel)
+  // Shared across Architecture Graph and Network Graph, and persisted across mode switches.
+  const panelState = useSettingsStore((s) => s.magnusPanelState)
+  const setPanelState = useSettingsStore((s) => s.setMagnusPanelState)
   const inputRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>
   const messagesEndRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>
   const snapshot = useGraphStore((s) => s.snapshot)
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId)
+  const activityTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  const streamTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const isSidebar = magnusMode === 'sidebar'
+  const isOpen = panelState === 'open'
 
   useEffect(() => {
-    if (expanded) setTimeout(() => inputRef.current?.focus(), 80)
-  }, [expanded])
+    if (isOpen) setTimeout(() => inputRef.current?.focus(), 80)
+  }, [isOpen])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, activity, streamingText])
 
-  // In sidebar mode, keep expanded when switching to that mode
-  useEffect(() => {
-    if (isSidebar) setExpanded(true)
-  }, [isSidebar])
+  useEffect(
+    () => () => {
+      activityTimersRef.current.forEach(clearTimeout)
+      if (streamTimerRef.current) clearInterval(streamTimerRef.current)
+    },
+    []
+  )
 
   const runPing = async () => {
     setPinging(true)
@@ -374,6 +475,23 @@ export function AiChatBubble() {
     }
   }
 
+  /** Streams already-fetched text into view progressively (frontend simulated streaming). */
+  const streamInResponse = (fullText: string) =>
+    new Promise<void>((resolve) => {
+      setStreamingText('')
+      let i = 0
+      const chunk = Math.max(2, Math.round(fullText.length / 90))
+      streamTimerRef.current = setInterval(() => {
+        i += chunk
+        setStreamingText(fullText.slice(0, i))
+        if (i >= fullText.length) {
+          if (streamTimerRef.current) clearInterval(streamTimerRef.current)
+          streamTimerRef.current = null
+          resolve()
+        }
+      }, 14)
+    })
+
   const sendMessage = async () => {
     const query = input.trim()
     if (!query || loading) return
@@ -381,28 +499,78 @@ export function AiChatBubble() {
     setInput('')
     setMessages((prev) => [...prev, { role: 'user', content: query }])
     setLoading(true)
+    setStreamingText(null)
+
+    const analyzingId = `analyzing-${Date.now()}`
+    setActivity([{ id: analyzingId, label: 'Analyzing', status: 'active' }])
+    activityTimersRef.current.forEach(clearTimeout)
+    activityTimersRef.current = []
 
     try {
       const ctx = buildProjectContext(snapshot)
       const selectedNode = snapshot?.nodes.find((n) => n.id === selectedNodeId)
+      const selectedFilePath = selectedNode?.path ?? selectedNode?.label ?? undefined
       const history: MagnusMessage[] = messages.map((m) => ({ role: m.role, content: m.content }))
 
-      const response = await window.prebase.magnusChat({
+      // Externalized activity timeline — status only, no hidden reasoning is ever shown.
+      activityTimersRef.current.push(
+        setTimeout(() => {
+          setActivity((prev) => [
+            ...prev.map((e) => (e.id === analyzingId ? { ...e, status: 'done' as const } : e)),
+            {
+              id: 'ctx',
+              label: selectedFilePath ? `Reading ${selectedFilePath}` : 'Reading project context',
+              status: 'active'
+            }
+          ])
+        }, 380)
+      )
+      activityTimersRef.current.push(
+        setTimeout(() => {
+          setActivity((prev) => [
+            ...prev.map((e) => (e.id === 'ctx' ? { ...e, status: 'done' as const } : e)),
+            { id: 'gen', label: 'Generating answer', status: 'active' }
+          ])
+        }, 820)
+      )
+
+      const responsePromise = window.prebase.magnusChat({
         query,
         projectRoot: ctx.projectRoot ?? '',
         projectName: ctx.projectName ?? 'this project',
-        selectedFilePath: selectedNode?.path ?? selectedNode?.label ?? undefined,
+        selectedFilePath,
         fileCount: ctx.fileCount,
         model: magnusModel,
         entryFile: ctx.entryFile,
         topFiles: ctx.topFiles,
         conversationHistory: history
       })
+
+      const { text: response, usedWebSearch, sources } = await responsePromise
+      activityTimersRef.current.forEach(clearTimeout)
+      setActivity((prev) => {
+        const done = prev.map((e) => ({ ...e, status: 'done' as const }))
+        // Only ever shown when Gemini's grounding metadata confirms a real search happened.
+        if (usedWebSearch) {
+          const label = sources.length ? `Searched the web — ${sources[0]}` : 'Searched the web'
+          return [...done, { id: 'web', label, status: 'done' as const }]
+        }
+        return done
+      })
+      // Brief pause so the completed activity trail (incl. web-search status) is visible
+      // before the answer starts streaming in.
+      await new Promise((r) => setTimeout(r, usedWebSearch ? 500 : 220))
+      await streamInResponse(response)
       setMessages((prev) => [...prev, { role: 'model', content: response }])
     } catch {
-      setMessages((prev) => [...prev, { role: 'model', content: 'Error reaching Magnus. Please try again.' }])
+      const errorText = 'Error reaching Magnus. Please try again.'
+      activityTimersRef.current.forEach(clearTimeout)
+      await streamInResponse(errorText)
+      setMessages((prev) => [...prev, { role: 'model', content: errorText }])
     } finally {
       setLoading(false)
+      setActivity([])
+      setStreamingText(null)
     }
   }
 
@@ -411,40 +579,46 @@ export function AiChatBubble() {
   }
 
   const bodyProps = {
-    messages, loading, input, inputRef, messagesEndRef,
+    messages, activity, streamingText, loading, input, inputRef, messagesEndRef,
     onInput: setInput, onKeyDown: handleKeyDown, onSend: sendMessage,
     selectedModel: magnusModel,
     onModelChange: setMagnusModel
   }
   const headerProps = {
-    onClose: () => setExpanded(false),
+    onMinimize: () => setPanelState('minimized'),
     onClear: () => setMessages([]),
     onPing: runPing,
     hasMsgs: messages.length > 0,
-    pinging,
-    isSidebar
+    pinging
   }
 
   // ── SIDEBAR MODE ──────────────────────────────────────────────────────────
   if (isSidebar) {
     return (
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            key="magnus-sidebar"
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 320, opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 360, damping: 32 }}
-            className="absolute top-0 right-0 bottom-0 z-30 flex flex-col bg-[#141518] border-l border-border-subtle overflow-hidden titlebar-no-drag"
-            style={{ boxShadow: '-4px 0 24px rgba(0,0,0,0.35)' }}
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <MagnusHeader {...headerProps} />
-            <MagnusBody {...bodyProps} />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <>
+        <AnimatePresence>
+          {isOpen && (
+            <motion.div
+              key="magnus-sidebar"
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: SIDEBAR_WIDTH, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 360, damping: 32 }}
+              className="absolute top-0 right-0 bottom-0 z-30 flex flex-col bg-[#141518] border-l border-border-subtle overflow-hidden titlebar-no-drag"
+              style={{ boxShadow: '-4px 0 24px rgba(0,0,0,0.35)' }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <MagnusHeader {...headerProps} />
+              <MagnusBody {...bodyProps} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {!isOpen && (
+            <MagnusNub isSidebar onOpen={() => setPanelState('open')} rightPx={0} />
+          )}
+        </AnimatePresence>
+      </>
     )
   }
 
@@ -455,14 +629,14 @@ export function AiChatBubble() {
       style={{ right: magnusRightPx }}
     >
       <AnimatePresence>
-        {expanded && (
+        {isOpen && (
           <motion.div
             key="magnus-float"
             initial={{ opacity: 0, y: 16, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.97 }}
             transition={{ type: 'spring', stiffness: 380, damping: 28 }}
-            className="w-[min(340px,calc(100vw-4rem))] rounded-2xl border border-border-subtle bg-[#141518] shadow-panel overflow-hidden flex flex-col"
+            className="w-[min(296px,calc(100vw-4rem))] rounded-2xl border border-border-subtle bg-[#141518] shadow-panel overflow-hidden flex flex-col"
             style={{
               maxHeight: 'min(520px, calc(100vh - 120px))',
               boxShadow: 'var(--shadow-panel), 0 0 32px rgba(45, 212, 191, 0.08)'
@@ -475,18 +649,21 @@ export function AiChatBubble() {
         )}
       </AnimatePresence>
 
-      {/* Trigger pill — hidden in sidebar mode since sidebar is always open */}
-      <motion.button
-        type="button"
-        whileHover={{ scale: 1.04 }}
-        whileTap={{ scale: 0.97 }}
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2.5 px-4 py-2.5 rounded-full border border-border-subtle bg-[#141518] text-text-secondary hover:text-text-primary hover:border-accent/35 transition-colors shadow-panel"
-        style={{ boxShadow: 'var(--shadow-panel), 0 0 24px rgba(45, 212, 191, 0.06)' }}
-      >
-        <Sparkles className="w-4 h-4 text-accent" />
-        {!expanded && <span className="text-xs font-medium">Magnus</span>}
-      </motion.button>
+      {/* Trigger pill also acts as the reopen nub when minimized */}
+      {!isOpen && (
+        <motion.button
+          type="button"
+          whileHover={{ scale: 1.04 }}
+          whileTap={{ scale: 0.97 }}
+          onClick={() => setPanelState('open')}
+          title="Open Magnus"
+          className="flex items-center gap-2.5 px-4 py-2.5 rounded-full border border-border-subtle bg-[#141518] text-text-secondary hover:text-text-primary hover:border-accent/35 transition-colors shadow-panel"
+          style={{ boxShadow: 'var(--shadow-panel), 0 0 24px rgba(45, 212, 191, 0.06)' }}
+        >
+          <Sparkles className="w-4 h-4 text-accent" />
+          <span className="text-xs font-medium">Magnus</span>
+        </motion.button>
+      )}
     </div>
   )
 }

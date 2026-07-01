@@ -72,15 +72,15 @@ export function pyramidBandKey(depth: number): string {
 }
 
 function nodeBandHalf(): number {
-  return Math.hypot(NODE_W, LAYOUT_NODE_BOX.height) / 2 + LAYOUT_NODE_BOX.gap * 0.42
+  return Math.hypot(NODE_W, LAYOUT_NODE_BOX.height) / 2 + LAYOUT_NODE_BOX.gap * 0.30
 }
 
 function entryCenterOuterRadius(runtime: LayoutRuntimeConfig): number {
-  return Math.max(cellHeight() * 0.52, runtime.centerClearance * 0.36)
+  return Math.max(cellHeight() * 0.46, runtime.centerClearance * 0.32)
 }
 
 function minRingBandWidth(): number {
-  return nodeBandHalf() * 2 + LAYOUT_NODE_BOX.gap * 0.55
+  return nodeBandHalf() * 2 + LAYOUT_NODE_BOX.gap * 0.38
 }
 
 const NODE_W = LAYOUT_NODE_BOX.width
@@ -420,10 +420,10 @@ function hierarchyMaxRadius(nodeCount: number, spacingScale = 1): number {
   const n = Math.max(1, nodeCount)
   const minBand = minRingBandWidth()
   const center = entryCenterOuterRadius(mergeLayoutRuntime({}))
-  // n/12 packs more nodes per ring, keeps overall radius compact
-  const ringsNeeded = Math.max(2, Math.ceil(n / 12))
-  const radial = center + ringsNeeded * minBand * 1.05
-  return Math.min(520, Math.max(180, radial)) * spacingScale
+  // n/16 packs more nodes per ring, keeps overall radius compact and reduces zoom-out
+  const ringsNeeded = Math.max(2, Math.ceil(n / 16))
+  const radial = center + ringsNeeded * minBand * 0.96
+  return Math.min(440, Math.max(150, radial)) * spacingScale
 }
 
 export function computeHierarchyLayout(

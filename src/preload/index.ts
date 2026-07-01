@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { LayoutRuntimeConfig } from '../core/layout/layout-config'
 import type { GraphSnapshot, IncrementalUpdate, LayoutMode } from '../core/types'
 import type { DescribeFileParams, DescribeLayerParams } from '../main/ai/geminiService'
-import type { MagnusChatParams, GeminiPingResult } from '../main/ai/magnusService'
+import type { MagnusChatParams, MagnusChatResult, GeminiPingResult } from '../main/ai/magnusService'
 
 export interface PrebaseAPI {
   openProjectDialog: () => Promise<string | null>
@@ -25,7 +25,7 @@ export interface PrebaseAPI {
   /** Request AI description for a depth layer (main process handles key securely). */
   describeLayer: (params: DescribeLayerParams) => Promise<string>
   /** Send a code/project question to Magnus AI (main process handles key securely). */
-  magnusChat: (params: MagnusChatParams) => Promise<string>
+  magnusChat: (params: MagnusChatParams) => Promise<MagnusChatResult>
   /** Diagnostic ping — minimal Gemini call, returns raw result for troubleshooting. */
   geminiPing: () => Promise<GeminiPingResult>
 }

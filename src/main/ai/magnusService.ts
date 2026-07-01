@@ -1,11 +1,50 @@
 import { getGeminiApiKey } from './apiKeyLoader'
-import { generateContent, type GeminiContent } from './geminiClient'
+import { generateContent, generateContentGrounded, type GeminiContent } from './geminiClient'
 
 const DEFAULT_MODEL = 'gemini-2.5-flash'
+const STRONG_MODEL = 'gemini-2.5-pro'
+
+/**
+ * Resolve the "auto" pseudo-model to a concrete Gemini model. Simple heuristic for now:
+ * longer/complex-looking queries route to the stronger model, everything else uses the
+ * fast default. Structured this way so smarter routing can be added later.
+ */
+function resolveAutoModel(query: string): string {
+  const q = query.toLowerCase()
+  const complexSignals = [
+    'architecture', 'debug', 'refactor', 'design', 'why does', 'explain in depth',
+    'trade-off', 'tradeoff', 'performance', 'security', 'compare'
+  ]
+  const looksComplex = q.length > 400 || complexSignals.some((s) => q.includes(s))
+  return looksComplex ? STRONG_MODEL : DEFAULT_MODEL
+}
+
+/**
+ * Whether a query looks code/project-relevant enough to justify a live web search
+ * (current library docs, framework APIs, dependency behavior, error messages).
+ * General-knowledge or conversational queries never trigger web search.
+ */
+function isCodeOrProjectQuery(query: string): boolean {
+  const q = query.toLowerCase()
+  const signals = [
+    'docs', 'documentation', 'api', 'library', 'package', 'framework', 'error', 'exception',
+    'bug', 'stack trace', 'dependency', 'version', 'deprecated', 'how do i', 'how to',
+    'best practice', 'vite', 'react', 'electron', 'typescript', 'node', 'npm', 'gemini'
+  ]
+  return signals.some((s) => q.includes(s))
+}
 
 export interface MagnusMessage {
   role: 'user' | 'model'
   content: string
+}
+
+export interface MagnusChatResult {
+  text: string
+  /** True only when Gemini actually issued a live web search for this reply. */
+  usedWebSearch: boolean
+  /** Source titles/domains Gemini actually consulted, if any. */
+  sources: string[]
 }
 
 export interface MagnusChatParams {
@@ -126,7 +165,7 @@ export async function geminiPing(): Promise<GeminiPingResult> {
   }
 }
 
-export async function magnusChat(params: MagnusChatParams): Promise<string> {
+export async function magnusChat(params: MagnusChatParams): Promise<MagnusChatResult> {
   const {
     query,
     projectName,
@@ -137,15 +176,19 @@ export async function magnusChat(params: MagnusChatParams): Promise<string> {
     topFiles,
     languageSummary,
     conversationHistory = [],
-    model = DEFAULT_MODEL
+    model: requestedModel = DEFAULT_MODEL
   } = params
+  const model = requestedModel === 'auto' ? resolveAutoModel(query) : requestedModel
 
   const apiKey = getGeminiApiKey()
   if (!apiKey) {
-    return (
-      'Gemini API key not found. ' +
-      'Add GEMINI_API_KEY=your-key to your .env file at the project root, then restart the app.'
-    )
+    return {
+      text:
+        'Gemini API key not found. ' +
+        'Add GEMINI_API_KEY=your-key to your .env file at the project root, then restart the app.',
+      usedWebSearch: false,
+      sources: []
+    }
   }
 
   // Build project context
@@ -178,14 +221,28 @@ export async function magnusChat(params: MagnusChatParams): Promise<string> {
     { role: 'user' as const, parts: [{ text: query }] }
   ]
 
+  const useWebSearch = isCodeOrProjectQuery(query)
+
   try {
+    if (useWebSearch) {
+      const result = await generateContentGrounded(apiKey, model, {
+        contents,
+        systemInstruction: { parts: [{ text: systemInstruction }] }
+      })
+      return {
+        text: result.text || 'No response generated.',
+        usedWebSearch: result.usedWebSearch,
+        sources: result.sources
+      }
+    }
+
     const text = await generateContent(apiKey, model, {
       contents,
       systemInstruction: { parts: [{ text: systemInstruction }] }
     })
-    return text || 'No response generated.'
+    return { text: text || 'No response generated.', usedWebSearch: false, sources: [] }
   } catch (err) {
     console.warn('[Magnus] Gemini error:', err)
-    return classifyGeminiError(err)
+    return { text: classifyGeminiError(err), usedWebSearch: false, sources: [] }
   }
 }

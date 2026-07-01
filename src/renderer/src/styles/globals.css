@@ -8,6 +8,32 @@
   }
 }
 
+/* Cursor-like "Analyzing…" wavy gradient shimmer — subtle, premium, no layout jank. */
+.magnus-shimmer {
+  background: linear-gradient(
+    100deg,
+    var(--color-text-muted) 20%,
+    var(--color-accent) 45%,
+    #7dd3fc 55%,
+    var(--color-text-muted) 80%
+  );
+  background-size: 220% 100%;
+  background-position: 0% 0%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: magnus-shimmer-move 2.1s ease-in-out infinite;
+}
+
+@keyframes magnus-shimmer-move {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: -220% 0%;
+  }
+}
+
 * {
   box-sizing: border-box;
 }

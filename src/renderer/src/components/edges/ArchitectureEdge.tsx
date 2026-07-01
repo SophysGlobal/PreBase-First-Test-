@@ -36,7 +36,7 @@ function ArchitectureEdgeComponent(props: EdgeProps) {
   const opacity = Number(style.opacity ?? 0.9)
 
   // Dark halo behind edge improves contrast over colored ring backgrounds
-  const haloWidth = strokeWidth + 2.2
+  const haloWidth = strokeWidth + 3.2
   const isDashed = (style as { strokeDasharray?: string }).strokeDasharray != null ||
     variant === 'dynamic' || variant === 'utility' || variant === 'folder-link' || variant === 'contains'
 
@@ -46,11 +46,11 @@ function ArchitectureEdgeComponent(props: EdgeProps) {
       <path
         d={edgePath}
         fill="none"
-        stroke="rgba(10,10,12,0.55)"
+        stroke="rgba(6,6,8,0.72)"
         strokeWidth={haloWidth}
         strokeLinecap="round"
         strokeDasharray={isDashed ? (style as { strokeDasharray?: string }).strokeDasharray : undefined}
-        opacity={opacity * 0.75}
+        opacity={Math.min(1, opacity * 0.95)}
       />
       <BaseEdge
         id={id}

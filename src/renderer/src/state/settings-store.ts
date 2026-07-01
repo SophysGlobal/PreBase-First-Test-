@@ -9,23 +9,29 @@ import {
 
 export type ThemePreference = 'light' | 'dark' | 'system'
 export type MagnusMode = 'float' | 'sidebar'
+/** Shared Magnus panel visibility state — persists across graph mode switching. */
+export type MagnusPanelState = 'open' | 'minimized'
 
 export interface MagnusModelOption {
   id: string
+  provider: 'auto' | 'gemini'
   label: string
   description: string
   tier: 'fast' | 'balanced' | 'powerful'
+  enabled: boolean
+  disabledReason?: string
 }
 
 export const MAGNUS_MODELS: MagnusModelOption[] = [
-  { id: 'gemini-2.5-flash',  label: 'Gemini 2.5 Flash',  description: 'Fast, capable, default',          tier: 'balanced' },
-  { id: 'gemini-2.5-pro',    label: 'Gemini 2.5 Pro',    description: 'Most capable, slower',            tier: 'powerful' },
-  { id: 'gemini-2.0-flash',  label: 'Gemini 2.0 Flash',  description: 'Lightweight, very fast',          tier: 'fast'     },
-  { id: 'gemini-1.5-pro',    label: 'Gemini 1.5 Pro',    description: 'Reliable, large context window',  tier: 'powerful' },
-  { id: 'gemini-1.5-flash',  label: 'Gemini 1.5 Flash',  description: 'Older fast model',                tier: 'fast'     },
+  { id: 'auto', provider: 'auto', label: 'Auto', description: 'PreBase picks the best model for the task', tier: 'balanced', enabled: true },
+  { id: 'gemini-2.5-flash',  provider: 'gemini', label: 'Gemini 2.5 Flash',  description: 'Fast, capable, default',          tier: 'balanced', enabled: true },
+  { id: 'gemini-2.5-pro',    provider: 'gemini', label: 'Gemini 2.5 Pro',    description: 'Most capable, slower',            tier: 'powerful', enabled: true },
+  { id: 'gemini-2.0-flash',  provider: 'gemini', label: 'Gemini 2.0 Flash',  description: 'Lightweight, very fast',          tier: 'fast',     enabled: true },
+  { id: 'gemini-1.5-pro',    provider: 'gemini', label: 'Gemini 1.5 Pro',    description: 'Reliable, large context window',  tier: 'powerful', enabled: true },
+  { id: 'gemini-1.5-flash',  provider: 'gemini', label: 'Gemini 1.5 Flash',  description: 'Older fast model',                tier: 'fast',     enabled: true },
 ]
 
-export const DEFAULT_MAGNUS_MODEL = 'gemini-2.5-flash'
+export const DEFAULT_MAGNUS_MODEL = 'auto'
 export type ResolvedTheme = 'light' | 'dark'
 export type UiDensity = 'comfortable' | 'compact'
 export type GraphQuality = 'balanced' | 'performance'
@@ -101,6 +107,8 @@ export interface AppSettings {
   magnusMode: MagnusMode
   /** Which Gemini model Magnus uses for responses. */
   magnusModel: string
+  /** Shared open/minimized state for the Magnus panel — persists across graph mode switches. */
+  magnusPanelState: MagnusPanelState
 }
 
 interface SettingsStore extends AppSettings {
@@ -153,6 +161,7 @@ interface SettingsStore extends AppSettings {
   setLegendInteractionDimAmount: (value: number) => void
   setMagnusMode: (mode: MagnusMode) => void
   setMagnusModel: (model: string) => void
+  setMagnusPanelState: (state: MagnusPanelState) => void
   resetSettings: () => void
 }
 
@@ -175,8 +184,8 @@ const defaults: AppSettings = {
   layoutAnimationDuration: 750,
   layerRadiusScale: 1,
   maxNodesPerLayer: 24,
-  layerGap: 132,
-  centerClearance: 108,
+  layerGap: 112,
+  centerClearance: 92,
   scatterRelaxIterations: 10,
   layoutSpacing: 'balanced',
   layoutOrganizationMethod: 'dependency-depth',
@@ -189,10 +198,10 @@ const defaults: AppSettings = {
   editorCursorSmoothCaret: true,
   renderThrottlingMs: 0,
   maxRenderedNodes: 0,
-  secondarySidebarWidth: 260,
+  secondarySidebarWidth: 224,
   secondarySidebarCollapsedWidth: 36,
   inspectorPanelWidth: 240,
-  sidebarMinWidth: 200,
+  sidebarMinWidth: 180,
   sidebarMaxWidth: 420,
   networkSimulationTicks: 80,
   networkLodNodeThreshold: 900,
@@ -204,7 +213,8 @@ const defaults: AppSettings = {
   collapseSidebarSectionsDefault: true,
   legendInteractionDimAmount: 40,
   magnusMode: 'sidebar',
-  magnusModel: DEFAULT_MAGNUS_MODEL
+  magnusModel: DEFAULT_MAGNUS_MODEL,
+  magnusPanelState: 'open'
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -270,6 +280,7 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ legendInteractionDimAmount: Math.max(0, Math.min(80, legendInteractionDimAmount)) }),
       setMagnusMode: (magnusMode) => set({ magnusMode }),
       setMagnusModel: (magnusModel) => set({ magnusModel }),
+      setMagnusPanelState: (magnusPanelState) => set({ magnusPanelState }),
       resetSettings: () => set({ ...defaults })
     }),
     {
@@ -298,8 +309,11 @@ export const useSettingsStore = create<SettingsStore>()(
         if (state.layoutAnimationDuration === undefined) state.layoutAnimationDuration = 750
         if (state.layerRadiusScale === undefined) state.layerRadiusScale = 1
         if (state.maxNodesPerLayer === undefined) state.maxNodesPerLayer = 24
-        if (state.layerGap === undefined) state.layerGap = 132
-        if (state.centerClearance === undefined) state.centerClearance = 108
+        if (state.layerGap === undefined) state.layerGap = 112
+        if (state.centerClearance === undefined) state.centerClearance = 92
+        // Compact hierarchy rings — only adjust users still on the old defaults.
+        if (state.layerGap === 132) state.layerGap = 112
+        if (state.centerClearance === 108) state.centerClearance = 92
         if (state.scatterRelaxIterations === undefined) state.scatterRelaxIterations = 10
         if (state.folderExpansionRadius === undefined) state.folderExpansionRadius = 82
         if (state.edgeSimplificationThreshold === undefined) {
@@ -321,12 +335,15 @@ export const useSettingsStore = create<SettingsStore>()(
         if (state.editorCursorSmoothCaret === undefined) state.editorCursorSmoothCaret = true
         if (state.renderThrottlingMs === undefined) state.renderThrottlingMs = 0
         if (state.maxRenderedNodes === undefined) state.maxRenderedNodes = 0
-        if (state.secondarySidebarWidth === undefined) state.secondarySidebarWidth = 260
+        if (state.secondarySidebarWidth === undefined) state.secondarySidebarWidth = 224
+        // Skinnier default sidebar — only adjust users still on the old default width.
+        if (state.secondarySidebarWidth === 260) state.secondarySidebarWidth = 224
+        if (state.sidebarMinWidth === 200) state.sidebarMinWidth = 180
         if (state.secondarySidebarCollapsedWidth === undefined) {
           state.secondarySidebarCollapsedWidth = 36
         }
         if (state.inspectorPanelWidth === undefined) state.inspectorPanelWidth = 240
-        if (state.sidebarMinWidth === undefined) state.sidebarMinWidth = 200
+        if (state.sidebarMinWidth === undefined) state.sidebarMinWidth = 180
         if (state.sidebarMaxWidth === undefined) state.sidebarMaxWidth = 420
         if (state.networkSimulationTicks === undefined) state.networkSimulationTicks = 80
         if (state.networkLodNodeThreshold === undefined) state.networkLodNodeThreshold = 900
@@ -352,7 +369,12 @@ export const useSettingsStore = create<SettingsStore>()(
           )
         }
         if (state.magnusMode === undefined) state.magnusMode = 'sidebar'
-        if (!state.magnusModel) state.magnusModel = DEFAULT_MAGNUS_MODEL
+        if (!state.magnusModel || !MAGNUS_MODELS.some((m) => m.id === state.magnusModel)) {
+          state.magnusModel = DEFAULT_MAGNUS_MODEL
+        }
+        if (state.magnusPanelState !== 'open' && state.magnusPanelState !== 'minimized') {
+          state.magnusPanelState = 'open'
+        }
         return state
       }
     }

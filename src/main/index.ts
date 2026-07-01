@@ -174,7 +174,11 @@ app.whenReady().then(() => {
       return await magnusChat(params)
     } catch (err) {
       console.warn('[ai:magnus-chat] error:', err)
-      return 'Error communicating with Magnus. Please try again.'
+      return {
+        text: 'Error communicating with Magnus. Please try again.',
+        usedWebSearch: false,
+        sources: []
+      }
     }
   })
 
