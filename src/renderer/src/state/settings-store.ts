@@ -8,6 +8,24 @@ import {
 } from '../utils/edge-categories'
 
 export type ThemePreference = 'light' | 'dark' | 'system'
+export type MagnusMode = 'float' | 'sidebar'
+
+export interface MagnusModelOption {
+  id: string
+  label: string
+  description: string
+  tier: 'fast' | 'balanced' | 'powerful'
+}
+
+export const MAGNUS_MODELS: MagnusModelOption[] = [
+  { id: 'gemini-2.5-flash',  label: 'Gemini 2.5 Flash',  description: 'Fast, capable, default',          tier: 'balanced' },
+  { id: 'gemini-2.5-pro',    label: 'Gemini 2.5 Pro',    description: 'Most capable, slower',            tier: 'powerful' },
+  { id: 'gemini-2.0-flash',  label: 'Gemini 2.0 Flash',  description: 'Lightweight, very fast',          tier: 'fast'     },
+  { id: 'gemini-1.5-pro',    label: 'Gemini 1.5 Pro',    description: 'Reliable, large context window',  tier: 'powerful' },
+  { id: 'gemini-1.5-flash',  label: 'Gemini 1.5 Flash',  description: 'Older fast model',                tier: 'fast'     },
+]
+
+export const DEFAULT_MAGNUS_MODEL = 'gemini-2.5-flash'
 export type ResolvedTheme = 'light' | 'dark'
 export type UiDensity = 'comfortable' | 'compact'
 export type GraphQuality = 'balanced' | 'performance'
@@ -79,6 +97,10 @@ export interface AppSettings {
   collapseSidebarSectionsDefault: boolean
   /** Legend opacity reduction during graph interaction (0–80). */
   legendInteractionDimAmount: number
+  /** Whether Magnus AI assistant appears as a floating bubble or a right sidebar panel. */
+  magnusMode: MagnusMode
+  /** Which Gemini model Magnus uses for responses. */
+  magnusModel: string
 }
 
 interface SettingsStore extends AppSettings {
@@ -129,6 +151,8 @@ interface SettingsStore extends AppSettings {
   toggleVisibleEdgeCategory: (category: GraphEdgeCategory) => void
   setCollapseSidebarSectionsDefault: (on: boolean) => void
   setLegendInteractionDimAmount: (value: number) => void
+  setMagnusMode: (mode: MagnusMode) => void
+  setMagnusModel: (model: string) => void
   resetSettings: () => void
 }
 
@@ -178,7 +202,9 @@ const defaults: AppSettings = {
   networkIdleAutoRotate: true,
   visibleEdgeCategories: [...DEFAULT_VISIBLE_EDGE_CATEGORIES],
   collapseSidebarSectionsDefault: true,
-  legendInteractionDimAmount: 40
+  legendInteractionDimAmount: 40,
+  magnusMode: 'sidebar',
+  magnusModel: DEFAULT_MAGNUS_MODEL
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -242,6 +268,8 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ collapseSidebarSectionsDefault }),
       setLegendInteractionDimAmount: (legendInteractionDimAmount) =>
         set({ legendInteractionDimAmount: Math.max(0, Math.min(80, legendInteractionDimAmount)) }),
+      setMagnusMode: (magnusMode) => set({ magnusMode }),
+      setMagnusModel: (magnusModel) => set({ magnusModel }),
       resetSettings: () => set({ ...defaults })
     }),
     {
@@ -323,6 +351,8 @@ export const useSettingsStore = create<SettingsStore>()(
             Math.min(80, state.legendInteractionDimAmount)
           )
         }
+        if (state.magnusMode === undefined) state.magnusMode = 'sidebar'
+        if (!state.magnusModel) state.magnusModel = DEFAULT_MAGNUS_MODEL
         return state
       }
     }

@@ -1,4 +1,5 @@
 import { useCallback, useState, type ReactNode } from 'react'
+import { MAGNUS_MODELS } from '../../state/settings-store'
 import {
   Info,
   Layers,
@@ -166,6 +167,35 @@ export function SettingsView() {
                     onChange={(e) => settings.setReduceMotion(e.target.checked)}
                     className="accent-teal-400"
                   />
+                </Row>
+                <Row
+                  label="Magnus AI display"
+                  hint="Float keeps Magnus as a draggable bubble. Sidebar pins it as a resizable right panel."
+                >
+                  <select
+                    value={settings.magnusMode}
+                    onChange={(e) => settings.setMagnusMode(e.target.value as 'float' | 'sidebar')}
+                    className={selectClass()}
+                  >
+                    <option value="float">Floating bubble</option>
+                    <option value="sidebar">Right sidebar</option>
+                  </select>
+                </Row>
+                <Row
+                  label="Magnus AI model"
+                  hint="Choose which Gemini model Magnus uses. Faster models reply quicker; powerful models handle complex tasks better."
+                >
+                  <select
+                    value={settings.magnusModel}
+                    onChange={(e) => settings.setMagnusModel(e.target.value)}
+                    className={selectClass()}
+                  >
+                    {MAGNUS_MODELS.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label} — {m.description}
+                      </option>
+                    ))}
+                  </select>
                 </Row>
               </Panel>
             )}

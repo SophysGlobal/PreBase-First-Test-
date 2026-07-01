@@ -1,7 +1,7 @@
 import { getGeminiApiKey } from './apiKeyLoader'
 import { generateContent, type GeminiContent } from './geminiClient'
 
-const MODEL = 'gemini-2.5-flash'
+const DEFAULT_MODEL = 'gemini-2.5-flash'
 
 export interface MagnusMessage {
   role: 'user' | 'model'
@@ -18,6 +18,8 @@ export interface MagnusChatParams {
   topFiles?: string[]
   languageSummary?: string
   conversationHistory?: MagnusMessage[]
+  /** Gemini model ID to use, e.g. "gemini-2.5-flash". Defaults to gemini-2.5-flash. */
+  model?: string
 }
 
 /** Parse a Gemini API error object into a user-facing message. */
@@ -108,7 +110,7 @@ export async function geminiPing(): Promise<GeminiPingResult> {
   }
 
   try {
-    const response = await generateContent(apiKey, MODEL, {
+    const response = await generateContent(apiKey, DEFAULT_MODEL, {
       contents: [{ role: 'user', parts: [{ text: 'Reply with the single word: OK' }] }]
     })
     return {
@@ -134,7 +136,8 @@ export async function magnusChat(params: MagnusChatParams): Promise<string> {
     entryFile,
     topFiles,
     languageSummary,
-    conversationHistory = []
+    conversationHistory = [],
+    model = DEFAULT_MODEL
   } = params
 
   const apiKey = getGeminiApiKey()
@@ -176,7 +179,7 @@ export async function magnusChat(params: MagnusChatParams): Promise<string> {
   ]
 
   try {
-    const text = await generateContent(apiKey, MODEL, {
+    const text = await generateContent(apiKey, model, {
       contents,
       systemInstruction: { parts: [{ text: systemInstruction }] }
     })
